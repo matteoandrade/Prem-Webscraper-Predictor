@@ -14,3 +14,5 @@ links = table.find_all("a")
 # Go to each team's website
 for l in links:
     l.get("href")
+
+print(l)
