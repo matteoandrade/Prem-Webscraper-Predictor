@@ -1,4 +1,5 @@
 import requests
+import pandas as pd
 from bs4 import BeautifulSoup
 # ^^^imports^^^
 
@@ -21,4 +22,21 @@ for l in link_lst:
         teams.append(l)
 team_links = [f"https://fbref.com{t}" for t in teams]
     
-print("\n", team_links)
+# Extracting match data
+url = team_links[0]
+data = requests.get(url)
+matches = pd.read_html(data.text, match = "Scores & Fixtures")
+
+# Extracting shooting data
+soup = BeautifulSoup(data.text)
+links = soup.find_all("a")
+shooting = []
+for l in links:
+    shooting.append(l.get("href"))
+shot_stats = []
+for s in shooting:
+    if s and "all_comps/shooting/" in s:
+        shot_stats.append(s)
+
+data = requests.get(f"https://fbref.com{links[0]}")
+shooting = pd.read_html(data.text, match="Shooting")[0]
