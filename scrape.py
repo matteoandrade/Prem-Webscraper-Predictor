@@ -1,6 +1,7 @@
 import requests
 import pandas as pd
 from bs4 import BeautifulSoup
+import time
 # ^^^imports^^^
 
 # Get the HTML from the page
@@ -16,7 +17,11 @@ for year in years:
 
     # Get the table from the HTML
     soup = BeautifulSoup(html.text, "lxml")
-    table = soup.select("table.stats_table")[0]
+    selected = soup.select("table.stats_table")
+    if selected:
+        table = selected[0]
+    else:
+        continue
     links = table.find_all("a")
 
     # Get the link for each team's website
@@ -29,13 +34,18 @@ for year in years:
             teams.append(l)
     team_links = [f"https://fbref.com{t}" for t in teams]
 
+    # Going to the URL of the previous season
+    prev_url = soup.select("a.prev")[0].get("href")
+    url = f"https://fbref.com/{prev_url}"
+
+
     # Loop through each team:
     for team in team_links:
         name = team.split("/")[-1].replace("-Stats", "")
 
         # Extracting match data
         data = requests.get(team)
-        matches = pd.read_html(data.text, match = "Scores & Fixtures")[0]
+        matches = pd.read_html(data.text, match="Scores & Fixtures")[0]
 
         # Extracting shooting data
         soup = BeautifulSoup(data.text, "lxml")
@@ -53,6 +63,20 @@ for year in years:
         # Merging game and shooting data
         shooting.columns = shooting.columns.droplevel()
         try:
-            team = matches[0].merge(shooting[["Date", "Sh", "SoT", "Dist", "FK", "PK", "PKatt"]], on="Date")
+            team_data = matches[0].merge(shooting[["Date", "Sh", "SoT", "Dist", "FK", "PK", "PKatt"]], on="Date")
         except:
             continue
+
+        # Filter non-Prem competitions
+        team_data = team_data[team_data["Comp"] == "Premier League"]
+
+        # Add to the list of dataframes
+        team_data["Season"] = year
+        team_data["Team"] = team
+        all.append(team_data)
+
+        time.sleep(1)
+
+# Combining dataframes
+df = pd.concat(all)
+df.to_csv("matches.csv")
