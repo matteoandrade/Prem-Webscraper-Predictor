@@ -14,6 +14,7 @@ years = [2025, 2024, 2023]
 all = []
 
 for year in years:
+    print("year:", year)
     html = requests.get(url, headers=header)
 
     # Get the table from the HTML
@@ -46,9 +47,9 @@ for year in years:
 
     # Loop through each team:
     for team in team_links:
-        print(team)
+        print("team:", team)
         name = team.split("/")[-1].replace("-Stats", "")
-        print(name)
+        print("name:", name)
 
         # Extracting match data
         data = requests.get(team, headers=header)
@@ -57,23 +58,28 @@ for year in years:
         # Extracting shooting data
         soup = BeautifulSoup(data.text, "lxml")
         links = soup.find_all("a")
+        print("links:", links)
         shooting = []
         for l in links:
             shooting.append(l.get("href"))
         shot_stats = []
+        print("shooting:", shooting)
         for s in shooting:
             if s and "all_comps/shooting/" in s:
                 shot_stats.append(s)
+        print("shots stats:", shot_stats)
         if not shot_stats:
             print("\n\nEMPTY\n\n")
         data = requests.get(f"https://fbref.com{shot_stats[0]}")
-        shooting = pd.read_html(data.text, match="Shooting")[0]
+        shoot = pd.read_html(data.text, match="Shooting")[0]
 
         # Merging game and shooting data
-        shooting.columns = shooting.columns.droplevel()
+        shoot.columns = shoot.columns.droplevel()
         try:
-            team_data = matches[0].merge(shooting[["Date", "Sh", "SoT", "Dist", "FK", "PK", "PKatt"]], on="Date")
+            team_data = matches[0].merge(shoot[["Date", "Sh", "SoT", "Dist", "FK", "PK", "PKatt"]], on="Date")
+            print("finish try")
         except:
+            print("caught")
             continue
 
         # Filter non-Prem competitions
