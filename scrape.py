@@ -14,7 +14,6 @@ years = [2025, 2024, 2023]
 all = []
 
 for year in years:
-    print("year:", year)
     html = requests.get(url, headers=header)
 
     # Get the table from the HTML
@@ -28,28 +27,19 @@ for year in years:
     #     continue
 
     table = selected[0]
-    links = table.find_all("a")
 
     # Get the link for each team's website
-    link_lst = []
-    for l in links:
-        link_lst.append(l.get("href"))
-    teams = []
-    for l in link_lst:
-        if "/squads/" in l:
-            teams.append(l)
+    links = [l.get("href") for l in table.find_all('a')]
+    teams = [l for l in links if "/squads/" in l]
     team_links = [f"https://fbref.com{t}" for t in teams]
 
     # Going to the URL of the previous season
     prev_url = soup.select("a.prev")[0].get("href")
     url = f"https://fbref.com/{prev_url}"
 
-
     # Loop through each team:
     for team in team_links:
-        print("team:", team)
         name = team.split("/")[-1].replace("-Stats", "")
-        print("name:", name)
 
         # Extracting match data
         data = requests.get(team, headers=header)
@@ -57,17 +47,8 @@ for year in years:
 
         # Extracting shooting data
         soup = BeautifulSoup(data.text, "lxml")
-        links = soup.find_all("a")
-        print("links:", links)
-        shooting = []
-        for l in links:
-            shooting.append(l.get("href"))
-        shot_stats = []
-        print("shooting:", shooting)
-        for s in shooting:
-            if s and "all_comps/shooting/" in s:
-                shot_stats.append(s)
-        print("shots stats:", shot_stats)
+        links = [l.get("href") for l in soup.find_all('a')]
+        shot_stats = [l for l in links if l and "all_comps/shooting/" in l]
         if not shot_stats:
             print("\n\nEMPTY\n\n")
         data = requests.get(f"https://fbref.com{shot_stats[0]}")
@@ -76,10 +57,8 @@ for year in years:
         # Merging game and shooting data
         shoot.columns = shoot.columns.droplevel()
         try:
-            team_data = matches[0].merge(shoot[["Date", "Sh", "SoT", "Dist", "FK", "PK", "PKatt"]], on="Date")
-            print("finish try")
+            team_data = matches.merge(shoot[["Date", "Sh", "SoT", "Dist", "FK", "PK", "PKatt"]], on="Date")
         except:
-            print("caught")
             continue
 
         # Filter non-Prem competitions
@@ -87,7 +66,7 @@ for year in years:
 
         # Add to the list of dataframes
         team_data["Season"] = year
-        team_data["Team"] = team
+        team_data["Team"] = name
         all.append(team_data)
 
         time.sleep(10)
