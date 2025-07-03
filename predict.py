@@ -4,6 +4,22 @@ from sklearn.metrics import accuracy_score
 from sklearn.metrics import precision_score
 # ^^^ imports ^^^
 
+def rolling_avg(group, col, new_col):
+    '''
+    Computes group's rolling average of the col columns and stores the values in the new_col columns
+    '''
+    # Sort by date
+    group = group.sort_values("date")
+
+    # Get rolling average
+    rolling = group[col].rolling(3, closed="left").mean()
+    group[new_col] = rolling
+
+    # Drop empty values
+    group = group.dropna(subset=new_col)
+
+    return group
+
 # Read in the data
 matches = pd.read_csv("matches.csv", index_col=0)
 
@@ -33,5 +49,16 @@ acc = accuracy_score(test["obj"], preds)
 combined = pd.DataFrame(dict(actual=test["obj"], prediction=preds))
 pd.crosstab(index=combined["actual"], columns=combined["prediction"])
 prec = precision_score(test["obj"], preds)
+
+# Breaking up by team
+grouped = matches.groupby("Team")
+group = grouped.get_group("Liverpool")
+print(group)
+
+# Computing rolling averages
+cols = ["GF", "GA", "Sh", "SoT", "Dist", "FK", "PK", "PKatt", "xG", "xGA"]
+new_cols = [f"{c.lower()}_roll" for c in cols]
+print(rolling_avg(group, cols, new_cols))
+
 
 print("Accuracy score:", acc, "Prediction score:", prec)
