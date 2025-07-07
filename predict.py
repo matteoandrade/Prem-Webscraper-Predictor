@@ -53,12 +53,13 @@ prec = precision_score(test["obj"], preds)
 # Breaking up by team
 grouped = matches.groupby("Team")
 group = grouped.get_group("Liverpool")
-print(group)
 
 # Computing rolling averages
 cols = ["GF", "GA", "Sh", "SoT", "Dist", "FK", "PK", "PKatt", "xG", "xGA"]
 new_cols = [f"{c.lower()}_roll" for c in cols]
-print(rolling_avg(group, cols, new_cols))
-
+matches_roll = matches.groupby("Team").apply(lambda x: rolling_avg(x, cols, new_cols))
+matches_roll = matches_roll.droplevel("Team")
+matches_roll.index = range(matches_roll.shape[0])
+print(matches_roll)
 
 print("Accuracy score:", acc, "Prediction score:", prec)
