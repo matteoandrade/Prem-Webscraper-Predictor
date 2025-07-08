@@ -60,6 +60,28 @@ new_cols = [f"{c.lower()}_roll" for c in cols]
 matches_roll = matches.groupby("Team").apply(lambda x: rolling_avg(x, cols, new_cols))
 matches_roll = matches_roll.droplevel("Team")
 matches_roll.index = range(matches_roll.shape[0])
-print(matches_roll)
 
-print("Accuracy score:", acc, "Prediction score:", prec)
+def predict(data, predictors):
+    """
+    Makes predictions based off the predictors in the data DataFrame
+    """
+    train = data[data["date"] < "2025-01-01"]
+    test  = data[data["date"] >= "2025-01-01"]
+
+    # Fitting data
+    rf.fit(train[predictors], train["obj"])
+    preds = rf.predict(test[predictors])
+
+    # Testing precision
+    combined = pd.DataFrame(dict(actual=test["obj"], prediction=preds), index=test.index)
+    pd.crosstab(index=combined["actual"], columns=combined["prediction"])
+    prec = precision_score(test["obj"], preds)
+
+    return combined, prec
+
+# Predicting matches based off the desired data
+comb, prec = predict(matches_roll, predictors+cols)
+comb = comb.merge(matches_roll[["date", "Team", "Opponent", "Result"]], left_index=True, right_index=True)
+
+print("Prediction score:", prec)
+print("Combined:\n", comb)
