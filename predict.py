@@ -50,9 +50,9 @@ combined = pd.DataFrame(dict(actual=test["obj"], prediction=preds))
 pd.crosstab(index=combined["actual"], columns=combined["prediction"])
 prec = precision_score(test["obj"], preds)
 
-# Breaking up by team
-grouped = matches.groupby("Team")
-group = grouped.get_group("Liverpool")
+# # Breaking up by team
+# grouped = matches.groupby("Team")
+# group = grouped.get_group("Liverpool")
 
 # Computing rolling averages
 cols = ["GF", "GA", "Sh", "SoT", "Dist", "FK", "PK", "PKatt", "xG", "xGA"]
@@ -65,14 +65,16 @@ def predict(data, predictors):
     """
     Makes predictions based off the predictors in the data DataFrame
     """
-    train = data[data["date"] < "2025-01-01"]
+
+    # Determining training and testing dates
+    train = data[data["date"] <  "2025-01-01"]
     test  = data[data["date"] >= "2025-01-01"]
 
     # Fitting data
     rf.fit(train[predictors], train["obj"])
     preds = rf.predict(test[predictors])
 
-    # Testing precision
+    # Testing precision of prediction
     combined = pd.DataFrame(dict(actual=test["obj"], prediction=preds), index=test.index)
     pd.crosstab(index=combined["actual"], columns=combined["prediction"])
     prec = precision_score(test["obj"], preds)
