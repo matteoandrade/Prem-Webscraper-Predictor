@@ -85,5 +85,25 @@ def predict(data, predictors):
 comb, prec = predict(matches_roll, predictors+cols)
 comb = comb.merge(matches_roll[["date", "Team", "Opponent", "Result"]], left_index=True, right_index=True)
 
+# Dictionary to map team names
+class MissingDict(dict):
+    __missing__ = lambda self, key: key
+
+map_val = {
+    "Brighton and Hove Albion": "Brighton",
+    "Wolverhampton Wanderers": "Wolves",
+    "Manchester United": "Manchester Utd",
+    "Newcastle United": "Newcastle Utd",
+    "Tottenham Hotspur": "Tottenham",
+    "West Ham United": "West Ham"
+}
+
+# Cleaning up team names
+mapping = MissingDict(**map_val)
+comb["new_team"] = comb["Team"].map(mapping)
+
+# Merging the table with itself
+merged = comb.merge(combined, left_on=["date", "new_team", ], right_on=["date", "Opponent"])
+
 print("Prediction score:", prec)
 print("Combined:\n", comb)
