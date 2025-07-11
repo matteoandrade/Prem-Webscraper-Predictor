@@ -1,109 +1,92 @@
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score
-from sklearn.metrics import precision_score
-# ^^^ imports ^^^
-
-def rolling_avg(group, col, new_col):
-    '''
-    Computes group's rolling average of the col columns and stores the values in the new_col columns
-    '''
-    # Sort by date
-    group = group.sort_values("date")
-
-    # Get rolling average
-    rolling = group[col].rolling(3, closed="left").mean()
-    group[new_col] = rolling
-
-    # Drop empty values
-    group = group.dropna(subset=new_col)
-
-    return group
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
 
 # Read in the data
 matches = pd.read_csv("matches.csv", index_col=0)
 
-# Clean the data
+# Clean/convert the data
 matches["date"] = pd.to_datetime(matches["Date"])
 matches.drop("Date", axis=1, inplace=True)
-
-# Make numerical values out of strings
 matches["venue_num"] = matches["Venue"].astype("category").cat.codes
 matches["opp_num"] = matches["Opponent"].astype("category").cat.codes
 matches["hour"] = matches["Time"].str.replace(":.+", "", regex=True).astype("int")
 matches["day_num"] = matches["date"].dt.day_of_week
-matches["obj"] = (matches["Result"] == 'W').astype("int")
 
-# Breaking up data
-rf = RandomForestClassifier(n_estimators=50, min_samples_split=10, random_state=1)
-train = matches[matches["date"] < "2025-01-01"]
-test  = matches[matches["date"] >= "2025-01-01"]
+def res_pts(result):
+    '''
+    Returns 3 if the result is a win, 1 if it is a draw, or 0 if it is a loss
+    '''
+    if result == 'W':
+        return 3
+    elif result == 'D':
+        return 1
+    else:
+        return 0
+    
+# Convert match results to the number of points won
+matches["points"] = matches["Result"].apply(res_pts)
+
+print("types:", matches.dtypes)
+
+# Define columns
+cols = ["GF", "GA", "Sh", "SoT", "Dist", "FK", "PK", "PKatt", "xG", "xGA", "Poss"]
+roll_cols = [f"{c.lower()}_roll" for c in cols]
 predictors = ["venue_num", "opp_num", "hour", "day_num"]
 
+# Compute rolling averages
+def rolling_avg(group, col, new_col, window):
+    '''
+    Computes group's rolling average of the col columns and stores the values in the new_col columns
+    '''
+    group = group.sort_values("date")
+    rolling = group[col].rolling(window, closed="left").mean()
+    group[new_col] = rolling
+    return group
+
+def apply_rolling_averages(data, cols, window=3):
+    '''
+    Applies the rolling_avg function to the data DataFrame's cols columns
+    '''
+    new_cols = [f"{c.lower()}_roll" for c in cols]
+    rolling_data = data.sort_values("date").groupby("Team", group_keys=False).apply(lambda x: rolling_avg(x, cols, new_cols, window)).reset_index(drop=True)
+    return rolling_data, new_cols
+
+# Get the rolling averages
+matches_roll, roll_cols = apply_rolling_averages(matches, cols)
+
+# Split between training and testing data
+train = matches_roll[matches_roll["date"] < "2025-01-01"].copy()
+test = matches_roll[matches_roll["date"] >= "2025-01-01"].copy()
+
+# Drop rows without rolling data
+train = train.dropna(subset=roll_cols)
+test = test.dropna(subset=roll_cols)
+
 # Fitting data
-rf.fit(train[predictors], train["obj"])
-preds = rf.predict(test[predictors])
+rf = RandomForestClassifier(n_estimators=50, min_samples_split=10, random_state=1, class_weight="balanced")
+rf.fit(train[predictors + roll_cols], train["points"])
 
-# Testing accuracy
-acc = accuracy_score(test["obj"], preds)
-combined = pd.DataFrame(dict(actual=test["obj"], prediction=preds))
-pd.crosstab(index=combined["actual"], columns=combined["prediction"])
-prec = precision_score(test["obj"], preds)
+# Making predictions
+test["prediction"] = rf.predict(test[predictors + roll_cols])
 
-# # Breaking up by team
-# grouped = matches.groupby("Team")
-# group = grouped.get_group("Liverpool")
+# Evaluating prediction accuracy
+print("Accuracy:", accuracy_score(test["points"], test["prediction"]))
+print("\nConfusion Matrix:\n", confusion_matrix(test["points"], test["prediction"]))
+print("\nClassification Report:\n", classification_report(test["points"], test["prediction"]))
 
-# Computing rolling averages
-cols = ["GF", "GA", "Sh", "SoT", "Dist", "FK", "PK", "PKatt", "xG", "xGA"]
-new_cols = [f"{c.lower()}_roll" for c in cols]
-matches_roll = matches.groupby("Team").apply(lambda x: rolling_avg(x, cols, new_cols))
-matches_roll = matches_roll.droplevel("Team")
-matches_roll.index = range(matches_roll.shape[0])
+# Predict probabilities for each class
+probs = rf.predict_proba(test[predictors + roll_cols])
 
-def predict(data, predictors):
-    """
-    Makes predictions based off the predictors in the data DataFrame
-    """
+# Classes might not be in order [0, 1, 3] ==> map manually
+# Get class order from the trained model
+class_order = rf.classes_
 
-    # Determining training and testing dates
-    train = data[data["date"] <  "2025-01-01"]
-    test  = data[data["date"] >= "2025-01-01"]
+# Create a mapping of class index to point value
+expected_points = sum(probs[:, i] * class_order[i] for i in range(len(class_order)))
+test["expected_points"] = expected_points
 
-    # Fitting data
-    rf.fit(train[predictors], train["obj"])
-    preds = rf.predict(test[predictors])
+# Show Sample Predictions
+print("\nSample predictions:")
+print(test[["Team", "Opponent", "date", "Result", "points", "prediction", "expected_points"]].head(10))
 
-    # Testing precision of prediction
-    combined = pd.DataFrame(dict(actual=test["obj"], prediction=preds), index=test.index)
-    pd.crosstab(index=combined["actual"], columns=combined["prediction"])
-    prec = precision_score(test["obj"], preds)
-
-    return combined, prec
-
-# Predicting matches based off the desired data
-comb, prec = predict(matches_roll, predictors+cols)
-comb = comb.merge(matches_roll[["date", "Team", "Opponent", "Result"]], left_index=True, right_index=True)
-
-# Dictionary to map team names
-class MissingDict(dict):
-    __missing__ = lambda self, key: key
-
-map_val = {
-    "Brighton and Hove Albion": "Brighton",
-    "Wolverhampton Wanderers": "Wolves",
-    "Manchester United": "Manchester Utd",
-    "Newcastle United": "Newcastle Utd",
-    "Tottenham Hotspur": "Tottenham",
-    "West Ham United": "West Ham"
-}
-
-# Cleaning up team names
-mapping = MissingDict(**map_val)
-comb["new_team"] = comb["Team"].map(mapping)
-
-# Merging the table with itself
-merged = comb.merge(combined, left_on=["date", "new_team", ], right_on=["date", "Opponent"])
-
-print("Prediction score:", prec)
-print("Combined:\n", comb)
