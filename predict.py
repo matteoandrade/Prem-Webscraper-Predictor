@@ -1,6 +1,9 @@
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+from sklearn.preprocessing import StandardScaler
+import tensorflow as tf
+from tensorflow.keras import layers, models
 
 # Read in the data
 matches = pd.read_csv("matches.csv", index_col=0)
@@ -26,8 +29,6 @@ def res_pts(result):
     
 # Convert match results to the number of points won
 matches["points"] = matches["Result"].apply(res_pts)
-
-print("types:", matches.dtypes)
 
 # Define columns
 cols = ["GF", "GA", "Sh", "SoT", "Dist", "FK", "PK", "PKatt", "xG", "xGA", "Poss"]
@@ -71,6 +72,7 @@ rf.fit(train[predictors + roll_cols], train["points"])
 test["prediction"] = rf.predict(test[predictors + roll_cols])
 
 # Evaluating prediction accuracy
+print("\nRandom Forest Approach:\n")
 print("Accuracy:", accuracy_score(test["points"], test["prediction"]))
 print("\nConfusion Matrix:\n", confusion_matrix(test["points"], test["prediction"]))
 print("\nClassification Report:\n", classification_report(test["points"], test["prediction"]))
@@ -90,3 +92,36 @@ test["expected_points"] = expected_points
 print("\nSample predictions:")
 print(test[["Team", "Opponent", "date", "Result", "points", "prediction", "expected_points"]].head(10))
 
+# Mapping points to indices
+points_map = {0: 0, 1: 1, 3: 2}
+train["target"] = train["points"].map(points_map)
+test["target"] = test["points"].map(points_map)
+
+# Normalize the inputs
+scaler = StandardScaler()
+X_train = scaler.fit_transform(train[predictors + roll_cols])
+X_test = scaler.transform(test[predictors + roll_cols])
+
+y_train = train["target"].values
+y_test = test["target"].values
+
+# Build and train neural networks
+model = models.Sequential([
+    layers.Input(shape=(X_train.shape[1],)),
+    layers.Dense(64, activation='relu'),
+    layers.Dense(32, activation='relu'),
+    layers.Dense(3, activation='softmax')  # 3 classes
+])
+
+model.compile(
+    optimizer='adam',
+    loss='sparse_categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+model.fit(X_train, y_train, epochs=30, batch_size=16, validation_split=0.2)
+
+# Evaluate model accuracy
+print("Tensor Flow Neural Network Approach:")
+y_pred = model.predict(X_test).argmax(axis=1)
+print(classification_report(y_test, y_pred, target_names=["Loss", "Draw", "Win"]))
