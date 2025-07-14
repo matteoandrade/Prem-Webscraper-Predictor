@@ -2,15 +2,18 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
 from sklearn.preprocessing import StandardScaler
+from sklearn.utils.class_weight import compute_class_weight
 import tensorflow as tf
 from tensorflow.keras import layers, models
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import TensorDataset, DataLoader
+import random
+import numpy as np
 
 # Read in the data
-matches = pd.read_csv("matches.csv", index_col=0)
+matches = pd.read_csv("matches_5.csv", index_col=0)
 
 # Clean/convert the data
 matches["date"] = pd.to_datetime(matches["Date"])
@@ -19,6 +22,9 @@ matches["venue_num"] = matches["Venue"].astype("category").cat.codes
 matches["opp_num"] = matches["Opponent"].astype("category").cat.codes
 matches["hour"] = matches["Time"].str.replace(":.+", "", regex=True).astype("int")
 matches["day_num"] = matches["date"].dt.day_of_week
+matches["poss_xg"] = matches["Poss"] * matches["xG"]
+matches["shot_ef"] = matches["SoT"] / matches["Sh"]
+matches["xg_dif"] = matches["xG"] - matches["xGA"]
 
 def res_pts(result):
     '''
@@ -35,7 +41,7 @@ def res_pts(result):
 matches["points"] = matches["Result"].apply(res_pts)
 
 # Define columns
-cols = ["GF", "GA", "Sh", "SoT", "Dist", "FK", "PK", "PKatt", "xG", "xGA", "Poss"]
+cols = ["GF", "GA", "Sh", "SoT", "Dist", "FK", "PK", "PKatt", "xG", "xGA", "Poss", "shot_ef", "poss_xg", "xg_dif"]#, "npxG"]
 roll_cols = [f"{c.lower()}_roll" for c in cols]
 predictors = ["venue_num", "opp_num", "hour", "day_num"]
 
@@ -49,13 +55,20 @@ def rolling_avg(group, col, new_col, window):
     group[new_col] = rolling
     return group
 
-def apply_rolling_averages(data, cols, window=3):
+def apply_rolling_averages(data, cols, windows=[3, 5, 10]):
     '''
     Applies the rolling_avg function to the data DataFrame's cols columns
     '''
-    new_cols = [f"{c.lower()}_roll" for c in cols]
-    rolling_data = data.sort_values("date").groupby("Team", group_keys=False).apply(lambda x: rolling_avg(x, cols, new_cols, window)).reset_index(drop=True)
-    return rolling_data, new_cols
+    all_col = []
+    res = data.copy()
+
+    for w in windows:
+        new_cols = [f"{c.lower()}_roll_{w}" for c in cols]
+        temp = res.sort_values("date").groupby("Team", group_keys=False).apply(lambda x: rolling_avg(x, cols, new_cols, w)).reset_index(drop=True)
+
+        res = temp
+        all_col.extend(new_cols)
+    return res, all_col
 
 # Get the rolling averages
 matches_roll, roll_cols = apply_rolling_averages(matches, cols)
@@ -67,6 +80,10 @@ test = matches_roll[matches_roll["date"] >= "2025-01-01"].copy()
 # Drop rows without rolling data
 train = train.dropna(subset=roll_cols)
 test = test.dropna(subset=roll_cols)
+
+# -----------------------------------------------------------------------------------
+# Random Forest
+# -----------------------------------------------------------------------------------
 
 # Fitting data
 rf = RandomForestClassifier(n_estimators=50, min_samples_split=10, random_state=1, class_weight="balanced")
@@ -93,8 +110,17 @@ expected_points = sum(probs[:, i] * class_order[i] for i in range(len(class_orde
 test["expected_points"] = expected_points
 
 # Show Sample Predictions
-print("\nSample predictions:")
-print(test[["Team", "Opponent", "date", "Result", "points", "prediction", "expected_points"]].head(10))
+# print("\nSample predictions:")
+# print(test[["Team", "Opponent", "date", "Result", "points", "prediction", "expected_points"]].head(10))
+
+# -----------------------------------------------------------------------------------
+# Tensor Flow
+# -----------------------------------------------------------------------------------
+
+# Making deterministic seeds
+tf.random.set_seed(42)
+np.random.seed(42)
+random.seed(42)
 
 # Mapping points to indices
 points_map = {0: 0, 1: 1, 3: 2}
@@ -124,12 +150,23 @@ model.compile(
     metrics=['accuracy']
 )
 
-model.fit(X_train, y_train, epochs=30, batch_size=16, validation_split=0.2, class_weight={0: 1.0, 1: 1.0, 2: 1.0})
+class_w = compute_class_weight(class_weight='balanced', classes=np.unique(y_train), y=y_train)
+w0, w1, w2 = class_w
+model.fit(X_train, y_train, epochs=30, batch_size=16, validation_split=0.2, class_weight={0: w0, 1: w1, 2: w2})
 
 # Evaluate model accuracy
 print("Tensor Flow Neural Network Approach:")
 y_pred = model.predict(X_test).argmax(axis=1)
 print(classification_report(y_test, y_pred, target_names=["Loss", "Draw", "Win"]))
+
+# -----------------------------------------------------------------------------------
+# PyTorch
+# -----------------------------------------------------------------------------------
+
+# Making deterministic seeds:
+torch.manual_seed(42)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
 
 # Convert data to PyTorch tensors
 X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
@@ -160,7 +197,8 @@ class FootballNet(nn.Module):
 
 # Instantiate model
 model = FootballNet(X_train.shape[1])
-criterion = nn.CrossEntropyLoss()
+weights = torch.tensor([w0, w1, w2], dtype=torch.float32)
+criterion = nn.CrossEntropyLoss(weight=weights)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 # Train the model
@@ -198,9 +236,8 @@ from sklearn.metrics import classification_report, confusion_matrix
 print("\nConfusion Matrix:\n", confusion_matrix(all_labels, all_preds))
 print("\nClassification Report:\n", classification_report(all_labels, all_preds, target_names=["Loss", "Draw", "Win"]))
 
-# Current Best (7/14/25):
-
+# Current Best (7/14/25) no added cols:
 #     L   D   W 
 # RF .51 .31 .53
-# TF .46 .36 .46
-# PT .45 .19 .46
+# TF .49 .24 .47
+# PT .44 .18 .46            .47 .20 .44 w/ 3 added cols         .49 .17 .48 w/o xg diff

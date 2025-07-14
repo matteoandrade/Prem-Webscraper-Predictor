@@ -10,7 +10,7 @@ header = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
 
 # Pulling multiple years of data
-years = [2025, 2024, 2023]
+years = [2025, 2024, 2023, 2022, 2021]
 all = []
 
 for year in years:
@@ -57,7 +57,7 @@ for year in years:
         # Merging game and shooting data
         shoot.columns = shoot.columns.droplevel()
         try:
-            team_data = matches.merge(shoot[["Date", "Sh", "SoT", "Dist", "FK", "PK", "PKatt"]], on="Date")
+            team_data = matches.merge(shoot[["Date", "Sh", "SoT", "Dist", "FK", "PK", "PKatt", "npxG"]], on="Date")
         except:
             continue
 
@@ -69,8 +69,8 @@ for year in years:
         team_data["Team"] = name
         all.append(team_data)
 
-        time.sleep(10)
+        time.sleep(5)
 
 # Combining dataframes
 df = pd.concat(all)
-df.to_csv("matches.csv")
+df.to_csv("matches_5.csv")
