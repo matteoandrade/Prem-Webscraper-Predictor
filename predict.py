@@ -14,6 +14,7 @@ import numpy as np
 
 # Read in the data
 matches = pd.read_csv("matches_5.csv", index_col=0)
+cons_win = [1, 3, 5, 7, 10]
 
 # Clean/convert the data
 matches["date"] = pd.to_datetime(matches["Date"])
@@ -42,7 +43,7 @@ matches["points"] = matches["Result"].apply(res_pts)
 
 # Define columns
 cols = ["GF", "GA", "Sh", "SoT", "Dist", "FK", "PK", "PKatt", "xG", "xGA", "Poss", "shot_ef", "poss_xg", "xg_dif"]#, "npxG"]
-roll_cols = [f"{c.lower()}_roll" for c in cols]
+roll_cols = [f"{c.lower()}_roll_{w}" for c in cols for w in cons_win]
 predictors = ["venue_num", "opp_num", "hour", "day_num"]
 
 # Compute rolling averages
@@ -71,7 +72,7 @@ def apply_rolling_averages(data, cols, windows=[3, 5, 10]):
     return res, all_col
 
 # Get the rolling averages
-matches_roll, roll_cols = apply_rolling_averages(matches, cols)
+matches_roll, roll_cols = apply_rolling_averages(matches, cols, windows=cons_win)
 
 # Split between training and testing data
 train = matches_roll[matches_roll["date"] < "2025-01-01"].copy()
@@ -81,25 +82,76 @@ test = matches_roll[matches_roll["date"] >= "2025-01-01"].copy()
 train = train.dropna(subset=roll_cols)
 test = test.dropna(subset=roll_cols)
 
+# Create a unique match ID for each game (based on date and both teams)
+matches["match_id"] = matches.apply(lambda x: "_".join(sorted([x["Team"], x["Opponent"]]) + [x["date"].strftime("%Y-%m-%d")]), axis=1)
+
+# Split into two: one from Team's perspective, one from Opponent's
+team_cols = cols + ["Team", "Opponent", "Result", "points", "match_id", "date"]
+team1_df = matches[team_cols].copy()
+team2_df = matches[team_cols].copy()
+
+# Rename columns to distinguish Team1 and Team2 stats
+team1_df = team1_df.rename(columns={col: f"team1_{col}" for col in cols})
+team2_df = team2_df.rename(columns={col: f"team2_{col}" for col in cols})
+team1_df = team1_df.rename(columns={"Team": "Team1", "Opponent": "Team2", "Result": "result_team1", "points": "points_team1"})
+team2_df = team2_df.rename(columns={"Team": "Team2", "Opponent": "Team1", "Result": "result_team2", "points": "points_team2"})
+
+# Merge on match_id
+combined = pd.merge(team1_df, team2_df, on="match_id", suffixes=("", "_opp"))
+
+# Keep only one row per match (avoid duplicating perspectives)
+combined = combined[combined["Team1"] < combined["Team2"]]  # Sort team names alphabetically for consistency
+combined["target"] = combined["result_team1"].apply(res_pts)
+
+# Now define new predictors
+new_predictors = [col for col in combined.columns if col.startswith("team1_") or col.startswith("team2_")]
+
+# Scale features for TensorFlow / PyTorch
+scaler = StandardScaler()
+X = scaler.fit_transform(combined[new_predictors])
+y = combined["target"].map({0: 0, 1: 1, 3: 2}).values  # Do this early and once
+
+# Split into train/test sets
+train_idx = combined["date"] < "2025-01-01"
+test_idx = ~train_idx
+
+X_train = X[train_idx]
+X_test = X[test_idx]
+y_train = y[train_idx]
+y_test = y[test_idx]
+
+# Ensuring no overlap between training and testing
+leakage_cols = ["points", "result_team1", "result_team2", "target"]
+combined = combined.drop(columns=[col for col in leakage_cols if col in combined.columns], errors='ignore')
+
 # -----------------------------------------------------------------------------------
 # Random Forest
 # -----------------------------------------------------------------------------------
 
 # Fitting data
 rf = RandomForestClassifier(n_estimators=50, min_samples_split=10, random_state=1, class_weight="balanced")
-rf.fit(train[predictors + roll_cols], train["points"])
+#rf.fit(train[predictors + roll_cols], train["points"])
+rf.fit(X_train, y_train)
 
 # Making predictions
-test["prediction"] = rf.predict(test[predictors + roll_cols])
+#test["prediction"] = rf.predict(test[predictors + roll_cols])
+combined.loc[test_idx, "prediction"] = rf.predict(X_test)
 
 # Evaluating prediction accuracy
 print("\nRandom Forest Approach:\n")
-print("Accuracy:", accuracy_score(test["points"], test["prediction"]))
-print("\nConfusion Matrix:\n", confusion_matrix(test["points"], test["prediction"]))
-print("\nClassification Report:\n", classification_report(test["points"], test["prediction"]))
+# print("Accuracy:", accuracy_score(test["points"], test["prediction"]))
+# print("Accuracy:", accuracy_score(y_test, test["prediction"]))
+# print("\nConfusion Matrix:\n", confusion_matrix(test["points"], test["prediction"]))
+# print("\nClassification Report:\n", classification_report(test["points"], test["prediction"]))
+
+print("Accuracy:", accuracy_score(y_test, combined.loc[test_idx, "prediction"]))
+print("\nConfusion Matrix:\n", confusion_matrix(y_test, combined.loc[test_idx, "prediction"]))
+print("\nClassification Report:\n", classification_report(y_test, combined.loc[test_idx, "prediction"]))
+
 
 # Predict probabilities for each class
-probs = rf.predict_proba(test[predictors + roll_cols])
+# probs = rf.predict_proba(test[predictors + roll_cols])
+probs = rf.predict_proba(X_test)
 
 # Classes might not be in order [0, 1, 3] ==> map manually
 # Get class order from the trained model
@@ -123,9 +175,9 @@ np.random.seed(42)
 random.seed(42)
 
 # Mapping points to indices
-points_map = {0: 0, 1: 1, 3: 2}
-train["target"] = train["points"].map(points_map)
-test["target"] = test["points"].map(points_map)
+# points_map = {0: 0, 1: 1, 3: 2}
+# train["target"] = train["points"].map(points_map)
+# test["target"] = test["points"].map(points_map)
 
 # Normalize the inputs
 scaler = StandardScaler()
@@ -232,7 +284,6 @@ with torch.no_grad():
 
 print(f"\nPyTorch Neural Network Approach: {correct / total:.4f}")
 
-from sklearn.metrics import classification_report, confusion_matrix
 print("\nConfusion Matrix:\n", confusion_matrix(all_labels, all_preds))
 print("\nClassification Report:\n", classification_report(all_labels, all_preds, target_names=["Loss", "Draw", "Win"]))
 
