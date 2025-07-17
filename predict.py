@@ -84,11 +84,15 @@ test = test.dropna(subset=roll_cols)
 
 # Create a unique match ID for each game (based on date and both teams)
 matches["match_id"] = matches.apply(lambda x: "_".join(sorted([x["Team"], x["Opponent"]]) + [x["date"].strftime("%Y-%m-%d")]), axis=1)
+matches_roll["match_id"] = matches["match_id"].values
 
 # Split into two: one from Team's perspective, one from Opponent's
-team_cols = cols + ["Team", "Opponent", "Result", "points", "match_id", "date"]
-team1_df = matches[team_cols].copy()
-team2_df = matches[team_cols].copy()
+team_cols = cols + roll_cols + ["Team", "Opponent", "Result", "points", "match_id", "date"]
+# team1_df = matches[team_cols].copy()
+# team2_df = matches[team_cols].copy()
+team1_df = matches_roll[team_cols].copy()
+team2_df = matches_roll[team_cols].copy()
+
 
 # Rename columns to distinguish Team1 and Team2 stats
 team1_df = team1_df.rename(columns={col: f"team1_{col}" for col in cols})
@@ -104,7 +108,22 @@ combined = combined[combined["Team1"] < combined["Team2"]]  # Sort team names al
 combined["target"] = combined["result_team1"].apply(res_pts)
 
 # Now define new predictors
-new_predictors = [col for col in combined.columns if col.startswith("team1_") or col.startswith("team2_")]
+# Get all numeric feature columns for modeling
+exclude_cols = ['Team1', 'Team2', 'Team1_opp', 'Team2_opp', 'match_id', 'date', 'date_opp', 'result_team1', 'points_team1', 'result_team2', 'points_team2', 'target']
+new_predictors = [col for col in combined.columns if col not in exclude_cols and combined[col].dtype in ['int64', 'float64']]
+
+# Drop rows with NaNs in any predictor
+combined = combined.dropna(subset=new_predictors)
+
+# Now re-check for issues
+if combined[new_predictors].isnull().any().any():
+    print("Still contains NaNs — something's wrong.")
+
+
+if combined[new_predictors].isnull().any().any():
+    print("Warning: NaNs in predictors")
+    print(combined[new_predictors].isnull().sum())
+
 
 # Scale features for TensorFlow / PyTorch
 scaler = StandardScaler()
@@ -113,7 +132,7 @@ y = combined["target"].map({0: 0, 1: 1, 3: 2}).values  # Do this early and once
 
 # Split into train/test sets
 train_idx = combined["date"] < "2025-01-01"
-test_idx = ~train_idx
+test_idx  = combined["date"] > "2025-01-01"
 
 X_train = X[train_idx]
 X_test = X[test_idx]
@@ -159,7 +178,8 @@ class_order = rf.classes_
 
 # Create a mapping of class index to point value
 expected_points = sum(probs[:, i] * class_order[i] for i in range(len(class_order)))
-test["expected_points"] = expected_points
+# test["expected_points"] = expected_points
+combined.loc[test_idx, "expected_points"] = expected_points
 
 # Show Sample Predictions
 # print("\nSample predictions:")
@@ -181,11 +201,11 @@ random.seed(42)
 
 # Normalize the inputs
 scaler = StandardScaler()
-X_train = scaler.fit_transform(train[predictors + roll_cols])
-X_test = scaler.transform(test[predictors + roll_cols])
+# X_train = scaler.fit_transform(train[predictors + roll_cols])
+# X_test = scaler.transform(test[predictors + roll_cols])
 
-y_train = train["target"].values
-y_test = test["target"].values
+# y_train = train["target"].values
+# y_test = test["target"].values
 
 # Build and train neural networks
 model = models.Sequential([
