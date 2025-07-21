@@ -1,304 +1,3 @@
-# import pandas as pd
-# from sklearn.ensemble import RandomForestClassifier
-# from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
-# from sklearn.preprocessing import StandardScaler
-# from sklearn.utils.class_weight import compute_class_weight
-# import tensorflow as tf
-# from tensorflow.keras import layers, models
-# import torch
-# import torch.nn as nn
-# import torch.nn.functional as F
-# from torch.utils.data import TensorDataset, DataLoader
-# import random
-# import numpy as np
-
-# # Read in the data
-# matches = pd.read_csv("matches_5.csv", index_col=0)
-# cons_win = [1, 3, 5, 7, 10]
-
-# # Clean/convert the data
-# matches["date"] = pd.to_datetime(matches["Date"])
-# matches.drop("Date", axis=1, inplace=True)
-# matches["venue_num"] = matches["Venue"].astype("category").cat.codes
-# matches["opp_num"] = matches["Opponent"].astype("category").cat.codes
-# matches["hour"] = matches["Time"].str.replace(":.+", "", regex=True).astype("int")
-# matches["day_num"] = matches["date"].dt.day_of_week
-
-# def res_pts(result):
-#     '''
-#     Returns 3 if the result is a win, 1 if it is a draw, or 0 if it is a loss
-#     '''
-#     if result == 'W':
-#         return 3
-#     elif result == 'D':
-#         return 1
-#     else:
-#         return 0
-    
-# # Convert match results to the number of points won
-# matches["points"] = matches["Result"].apply(res_pts)
-
-# # Only use historical performance data for rolling averages
-# historical_cols = ["GF", "GA", "Sh", "SoT", "Dist", "FK", "PK", "PKatt", "xG", "xGA", "Poss"]
-
-# # Compute rolling averages
-# def rolling_avg(group, col, new_col, window):
-#     '''
-#     Computes group's rolling average of the col columns and stores the values in the new_col columns
-#     '''
-#     group = group.sort_values("date")
-#     # Use closed="left" to exclude current match from rolling average
-#     rolling = group[col].rolling(window, closed="left", min_periods=1).mean()
-#     group[new_col] = rolling
-#     return group
-
-# def apply_rolling_averages(data, cols, windows=[3, 5, 10]):
-#     '''
-#     Applies the rolling_avg function to the data DataFrame's cols columns
-#     '''
-#     all_col = []
-#     res = data.copy()
-
-#     for w in windows:
-#         new_cols = [f"{c.lower()}_roll_{w}" for c in cols]
-#         temp = res.sort_values("date").groupby("Team", group_keys=False).apply(lambda x: rolling_avg(x, cols, new_cols, w)).reset_index(drop=True)
-#         res = temp
-#         all_col.extend(new_cols)
-#     return res, all_col
-
-# # Get the rolling averages for historical data only
-# matches_roll, roll_cols = apply_rolling_averages(matches, historical_cols, windows=cons_win)
-
-# # FIXED: Simplified approach - use each match as is, with team vs opponent
-# # Create features that represent the matchup
-
-# print("Creating match features...")
-
-# # Basic match information
-# feature_cols = ["venue_num", "opp_num", "hour", "day_num"] + roll_cols
-
-# # Create the dataset
-# X_data = matches_roll[feature_cols].copy()
-# y_data = matches_roll["points"].map({0: 0, 1: 1, 3: 2})  # Map to 0, 1, 2 for classification
-
-# print(f"Dataset shape: {X_data.shape}")
-# print(f"Features: {feature_cols[:10]}...")  # Show first 10 features
-
-# # Drop rows with NaNs
-# valid_idx = ~(X_data.isnull().any(axis=1) | y_data.isnull())
-# X_clean = X_data[valid_idx]
-# y_clean = y_data[valid_idx]
-# dates_clean = matches_roll.loc[valid_idx, "date"]
-
-# print(f"Shape after dropping NaNs: {X_clean.shape}")
-# print(f"Remaining samples: {len(y_clean)}")
-
-# # Check class distribution
-# print(f"Class distribution: {y_clean.value_counts().sort_index()}")
-
-# # Scale features
-# scaler = StandardScaler()
-# X_scaled = scaler.fit_transform(X_clean)
-
-# # Split into train/test sets by date
-# train_idx = dates_clean < "2025-01-01"
-# test_idx = dates_clean >= "2025-01-01"
-
-# X_train = X_scaled[train_idx]
-# X_test = X_scaled[test_idx]
-# y_train = y_clean[train_idx].values
-# y_test = y_clean[test_idx].values
-
-# print(f"Training set size: {X_train.shape[0]}")
-# print(f"Test set size: {X_test.shape[0]}")
-
-# if X_test.shape[0] == 0:
-#     print("WARNING: No test data found. Using different date split...")
-#     # Use last 20% of data as test set
-#     split_idx = int(0.8 * len(X_scaled))
-#     X_train = X_scaled[:split_idx]
-#     X_test = X_scaled[split_idx:]
-#     y_train = y_clean.iloc[:split_idx].values
-#     y_test = y_clean.iloc[split_idx:].values
-#     print(f"New training set size: {X_train.shape[0]}")
-#     print(f"New test set size: {X_test.shape[0]}")
-
-# # -----------------------------------------------------------------------------------
-# # Random Forest
-# # -----------------------------------------------------------------------------------
-
-# print("\n" + "="*50)
-# print("TRAINING MODELS")
-# print("="*50)
-
-# rf = RandomForestClassifier(n_estimators=50, min_samples_split=10, random_state=1, class_weight="balanced")
-# rf.fit(X_train, y_train)
-
-# # Making predictions
-# rf_predictions = rf.predict(X_test)
-
-# # Evaluating prediction accuracy
-# print("\nRandom Forest Approach:")
-# rf_accuracy = accuracy_score(y_test, rf_predictions)
-# print(f"Accuracy: {rf_accuracy:.4f}")
-# print("\nConfusion Matrix:")
-# print(confusion_matrix(y_test, rf_predictions))
-# print("\nClassification Report:")
-# print(classification_report(y_test, rf_predictions, target_names=["Loss", "Draw", "Win"]))
-
-# # -----------------------------------------------------------------------------------
-# # TensorFlow
-# # -----------------------------------------------------------------------------------
-
-# # Making deterministic seeds
-# tf.random.set_seed(42)
-# np.random.seed(42)
-# random.seed(42)
-
-# # Build and train neural network
-# model = models.Sequential([
-#     layers.Input(shape=(X_train.shape[1],)),
-#     layers.Dense(128, activation='relu'),
-#     layers.Dropout(0.3),
-#     layers.Dense(64, activation='relu'),
-#     layers.Dense(3, activation='softmax')
-# ])
-
-# model.compile(
-#     optimizer='adam',
-#     loss='sparse_categorical_crossentropy',
-#     metrics=['accuracy']
-# )
-
-# # Compute class weights
-# class_w = compute_class_weight(class_weight='balanced', classes=np.unique(y_train), y=y_train)
-# class_weight_dict = {i: class_w[i] for i in range(len(class_w))}
-
-# # Train model
-# model.fit(X_train, y_train, epochs=30, batch_size=16, validation_split=0.2, 
-#           class_weight=class_weight_dict, verbose=0)
-
-# # Evaluate model accuracy
-# print("\nTensorFlow Neural Network Approach:")
-# y_pred_tf = model.predict(X_test, verbose=0).argmax(axis=1)
-# tf_accuracy = accuracy_score(y_test, y_pred_tf)
-# print(f"Accuracy: {tf_accuracy:.4f}")
-# print("\nClassification Report:")
-# print(classification_report(y_test, y_pred_tf, target_names=["Loss", "Draw", "Win"]))
-
-# # -----------------------------------------------------------------------------------
-# # PyTorch
-# # -----------------------------------------------------------------------------------
-
-# # Making deterministic seeds
-# torch.manual_seed(42)
-# if torch.cuda.is_available():
-#     torch.backends.cudnn.deterministic = True
-#     torch.backends.cudnn.benchmark = False
-
-# # Convert data to PyTorch tensors
-# X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
-# y_train_tensor = torch.tensor(y_train, dtype=torch.long)
-# X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
-# y_test_tensor = torch.tensor(y_test, dtype=torch.long)
-
-# # Create DataLoaders
-# train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
-# train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
-# test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
-# test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
-
-# # Define model
-# class FootballNet(nn.Module):
-#     def __init__(self, input_size):
-#         super(FootballNet, self).__init__()
-#         self.fc1 = nn.Linear(input_size, 64)
-#         self.fc2 = nn.Linear(64, 32)
-#         self.out = nn.Linear(32, 3)
-#         self.dropout = nn.Dropout(0.3)
-
-#     def forward(self, x):
-#         x = F.relu(self.fc1(x))
-#         x = self.dropout(x)
-#         x = F.relu(self.fc2(x))
-#         return self.out(x)
-
-# # Initialize model
-# model_pt = FootballNet(X_train.shape[1])
-
-# # Create class weights tensor
-# weights = torch.tensor(class_w, dtype=torch.float32)
-# criterion = nn.CrossEntropyLoss(weight=weights)
-# optimizer = torch.optim.Adam(model_pt.parameters(), lr=0.001)
-
-# # Training loop
-# epochs = 30
-# model_pt.train()
-# for epoch in range(epochs):
-#     for X_batch, y_batch in train_loader:
-#         optimizer.zero_grad()
-#         outputs = model_pt(X_batch)
-#         loss = criterion(outputs, y_batch)
-#         loss.backward()
-#         optimizer.step()
-
-# # Evaluate model
-# model_pt.eval()
-# correct = 0
-# total = 0
-# all_preds = []
-# all_labels = []
-
-# with torch.no_grad():
-#     for X_batch, y_batch in test_loader:
-#         outputs = model_pt(X_batch)
-#         _, predicted = torch.max(outputs, 1)
-#         all_preds.extend(predicted.numpy())
-#         all_labels.extend(y_batch.numpy())
-#         total += y_batch.size(0)
-#         correct += (predicted == y_batch).sum().item()
-
-# pt_accuracy = correct / total
-# print(f"\nPyTorch Neural Network Approach:")
-# print(f"Accuracy: {pt_accuracy:.4f}")
-# print("\nConfusion Matrix:")
-# print(confusion_matrix(all_labels, all_preds))
-# print("\nClassification Report:")
-# print(classification_report(all_labels, all_preds, target_names=["Loss", "Draw", "Win"]))
-
-# # Model comparison
-# print("\n" + "="*50)
-# print("MODEL COMPARISON")
-# print("="*50)
-# print(f"Random Forest Accuracy: {rf_accuracy:.4f}")
-# print(f"TensorFlow NN Accuracy: {tf_accuracy:.4f}")
-# print(f"PyTorch NN Accuracy: {pt_accuracy:.4f}")
-
-# # Data leakage check
-# print("\n" + "="*50)
-# print("DATA LEAKAGE CHECK:")
-# print("="*50)
-# max_accuracy = max(rf_accuracy, tf_accuracy, pt_accuracy)
-# if max_accuracy > 0.75:
-#     print("⚠️  WARNING: Accuracy > 75% suggests possible data leakage!")
-#     print("Expected football prediction accuracy: 45-55%")
-# else:
-#     print("✅ Accuracy levels look realistic for football prediction")
-    
-# print(f"\nHighest accuracy achieved: {max_accuracy:.4f}")
-
-# # Feature importance (Random Forest)
-# if hasattr(rf, 'feature_importances_'):
-#     print("\n" + "="*50)
-#     print("TOP 10 MOST IMPORTANT FEATURES (Random Forest)")
-#     print("="*50)
-#     feature_importance = pd.DataFrame({
-#         'feature': feature_cols,
-#         'importance': rf.feature_importances_
-#     }).sort_values('importance', ascending=False)
-    
-#     print(feature_importance.head(10).to_string(index=False))
-
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
@@ -510,11 +209,143 @@ best_rf = rf_grid.best_estimator_
 print(f"Best RF parameters: {rf_grid.best_params_}")
 
 # -----------------------------------------------------------------------------------
-# IMPROVEMENT 5: Ensemble methods
+# IMPROVEMENT 5: PyTorch Neural Network
 # -----------------------------------------------------------------------------------
 
 print("\n" + "="*60)
-print("TRAINING IMPROVED MODELS")
+print("TRAINING PYTORCH MODEL")
+print("="*60)
+
+# Set seeds for reproducibility
+torch.manual_seed(42)
+if torch.cuda.is_available():
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+# Enhanced PyTorch model
+class AdvancedFootballNet(nn.Module):
+    def __init__(self, input_size, hidden_sizes=[256, 128, 64], dropout_rates=[0.4, 0.3, 0.2], num_classes=3):
+        super(AdvancedFootballNet, self).__init__()
+        
+        # Build layers dynamically
+        layers = []
+        prev_size = input_size
+        
+        for i, (hidden_size, dropout_rate) in enumerate(zip(hidden_sizes, dropout_rates)):
+            layers.extend([
+                nn.Linear(prev_size, hidden_size),
+                nn.BatchNorm1d(hidden_size),
+                nn.ReLU(),
+                nn.Dropout(dropout_rate)
+            ])
+            prev_size = hidden_size
+        
+        # Output layer
+        layers.append(nn.Linear(prev_size, num_classes))
+        
+        self.network = nn.Sequential(*layers)
+        
+        # Initialize weights
+        self.apply(self._init_weights)
+    
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            nn.init.xavier_uniform_(module.weight)
+            nn.init.constant_(module.bias, 0)
+    
+    def forward(self, x):
+        return self.network(x)
+
+# Prepare PyTorch data
+X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
+y_train_tensor = torch.tensor(y_train, dtype=torch.long)
+X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
+y_test_tensor = torch.tensor(y_test, dtype=torch.long)
+
+# Create DataLoaders
+train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
+train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
+test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+
+# Initialize model
+pytorch_model = AdvancedFootballNet(X_train.shape[1])
+
+# Loss function with class weights
+class_weights = torch.tensor(compute_class_weight('balanced', classes=np.unique(y_train), y=y_train), 
+                           dtype=torch.float32)
+criterion = nn.CrossEntropyLoss(weight=class_weights)
+
+# Optimizer with learning rate scheduling
+optimizer = torch.optim.Adam(pytorch_model.parameters(), lr=0.001, weight_decay=1e-5)
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=10, factor=0.5)
+
+# Training function
+def train_pytorch_model(model, train_loader, criterion, optimizer, scheduler, epochs=100):
+    model.train()
+    best_loss = float('inf')
+    patience_counter = 0
+    patience = 15
+    
+    for epoch in range(epochs):
+        total_loss = 0
+        for X_batch, y_batch in train_loader:
+            optimizer.zero_grad()
+            outputs = model(X_batch)
+            loss = criterion(outputs, y_batch)
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+        
+        avg_loss = total_loss / len(train_loader)
+        scheduler.step(avg_loss)
+        
+        # Early stopping
+        if avg_loss < best_loss:
+            best_loss = avg_loss
+            patience_counter = 0
+        else:
+            patience_counter += 1
+            
+        if patience_counter >= patience:
+            print(f"Early stopping at epoch {epoch+1}")
+            break
+    
+    return model
+
+# Train PyTorch model
+print("Training PyTorch Neural Network...")
+pytorch_model = train_pytorch_model(pytorch_model, train_loader, criterion, optimizer, scheduler)
+
+# Evaluate PyTorch model
+def evaluate_pytorch_model(model, test_loader):
+    model.eval()
+    all_preds = []
+    all_probs = []
+    all_labels = []
+    
+    with torch.no_grad():
+        for X_batch, y_batch in test_loader:
+            outputs = model(X_batch)
+            probs = torch.softmax(outputs, dim=1)
+            _, predicted = torch.max(outputs, 1)
+            
+            all_preds.extend(predicted.numpy())
+            all_probs.extend(probs.numpy())
+            all_labels.extend(y_batch.numpy())
+    
+    return np.array(all_preds), np.array(all_probs), np.array(all_labels)
+
+pytorch_pred, pytorch_probs, _ = evaluate_pytorch_model(pytorch_model, test_loader)
+pytorch_accuracy = accuracy_score(y_test, pytorch_pred)
+print(f"PyTorch Neural Network Accuracy: {pytorch_accuracy:.4f}")
+
+# -----------------------------------------------------------------------------------
+# IMPROVEMENT 6: Ensemble methods (including PyTorch)
+# -----------------------------------------------------------------------------------
+
+print("\n" + "="*60)
+print("TRAINING SKLEARN MODELS")
 print("="*60)
 
 # Multiple models for ensemble
@@ -539,8 +370,12 @@ for name, model in ml_models.items():
     accuracy = accuracy_score(y_test, pred)
     print(f"{name} Accuracy: {accuracy:.4f}")
 
-# IMPROVEMENT 6: Ensemble voting
-print(f"\nCreating ensemble...")
+# Add PyTorch to the predictions and probabilities
+model_predictions['PyTorch Neural Network'] = pytorch_pred
+model_probabilities['PyTorch Neural Network'] = pytorch_probs
+
+# IMPROVEMENT 7: Ensemble voting (including PyTorch)
+print(f"\nCreating ensemble (including PyTorch)...")
 ensemble_probs = np.mean(list(model_probabilities.values()), axis=0)
 ensemble_pred = np.argmax(ensemble_probs, axis=1)
 ensemble_accuracy = accuracy_score(y_test, ensemble_pred)
@@ -548,25 +383,29 @@ ensemble_accuracy = accuracy_score(y_test, ensemble_pred)
 print(f"Ensemble Accuracy: {ensemble_accuracy:.4f}")
 
 # -----------------------------------------------------------------------------------
-# IMPROVEMENT 7: Enhanced Neural Network
+# IMPROVEMENT 8: Enhanced TensorFlow Neural Network
 # -----------------------------------------------------------------------------------
+
+print("\n" + "="*60)
+print("TRAINING TENSORFLOW MODEL")
+print("="*60)
 
 tf.random.set_seed(42)
 np.random.seed(42)
 
 # More sophisticated neural network
 def create_advanced_nn(input_dim, num_classes=3):
-    model = models.Sequential([
-        layers.Input(shape=(input_dim,)),
-        layers.Dense(256, activation='relu'),
-        layers.BatchNormalization(),
-        layers.Dropout(0.4),
-        layers.Dense(128, activation='relu'),
-        layers.BatchNormalization(),
-        layers.Dropout(0.3),
-        layers.Dense(64, activation='relu'),
-        layers.Dropout(0.2),
-        layers.Dense(num_classes, activation='softmax')
+    model = tf.keras.models.Sequential([
+        tf.keras.layers.Input(shape=(input_dim,)),
+        tf.keras.layers.Dense(256, activation='relu'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Dropout(0.4),
+        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Dropout(0.3),
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dropout(0.2),
+        tf.keras.layers.Dense(num_classes, activation='softmax')
     ])
     
     model.compile(
@@ -578,6 +417,7 @@ def create_advanced_nn(input_dim, num_classes=3):
     return model
 
 # Train advanced neural network
+print("Training TensorFlow Neural Network...")
 advanced_nn = create_advanced_nn(X_train.shape[1])
 
 # Class weights
@@ -585,14 +425,14 @@ class_w = compute_class_weight('balanced', classes=np.unique(y_train), y=y_train
 class_weight_dict = {i: class_w[i] for i in range(len(class_w))}
 
 # Callbacks
-early_stopping = callbacks.EarlyStopping(patience=10, restore_best_weights=True)
-reduce_lr = callbacks.ReduceLROnPlateau(patience=5, factor=0.5)
+early_stopping = tf.keras.callbacks.EarlyStopping(patience=15, restore_best_weights=True, verbose=0)
+reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(patience=10, factor=0.5, verbose=0)
 
 # Train with callbacks
 history = advanced_nn.fit(
     X_train, y_train,
     epochs=100,
-    batch_size=32,
+    batch_size=64,
     validation_split=0.2,
     class_weight=class_weight_dict,
     callbacks=[early_stopping, reduce_lr],
@@ -600,9 +440,22 @@ history = advanced_nn.fit(
 )
 
 nn_pred = advanced_nn.predict(X_test, verbose=0).argmax(axis=1)
+nn_probs = advanced_nn.predict(X_test, verbose=0)
 nn_accuracy = accuracy_score(y_test, nn_pred)
 
-print(f"Advanced Neural Network Accuracy: {nn_accuracy:.4f}")
+print(f"TensorFlow Neural Network Accuracy: {nn_accuracy:.4f}")
+
+# Add TensorFlow to predictions
+model_predictions['TensorFlow Neural Network'] = nn_pred
+model_probabilities['TensorFlow Neural Network'] = nn_probs
+
+# Update ensemble with all models (including both neural networks)
+print(f"\nUpdating ensemble with all models...")
+ensemble_probs = np.mean(list(model_probabilities.values()), axis=0)
+ensemble_pred = np.argmax(ensemble_probs, axis=1)
+ensemble_accuracy = accuracy_score(y_test, ensemble_pred)
+
+print(f"Final Ensemble Accuracy (5 models): {ensemble_accuracy:.4f}")
 
 # -----------------------------------------------------------------------------------
 # Final Results Comparison
@@ -618,7 +471,7 @@ for name, pred in model_predictions.items():
     all_results.append((name, acc))
 
 all_results.append(('Ensemble', ensemble_accuracy))
-all_results.append(('Advanced Neural Network', nn_accuracy))
+all_results.append(('TensorFlow Neural Network', nn_accuracy))
 
 # Sort by accuracy
 all_results.sort(key=lambda x: x[1], reverse=True)
@@ -671,10 +524,3 @@ if 'Random Forest' in best_model_name or 'Gradient' in best_model_name:
     print(f"\nFeature Category Importance:")
     print(f"Contextual features: {contextual_importance:.3f}")
     print(f"Rolling averages: {rolling_importance:.3f}")
-
-print(f"\n✅ Improvement achieved!")
-print(f"Your original best model: 46.35%")
-print(f"New best model: {best_accuracy:.2%}")
-if best_accuracy > 0.4635:
-    improvement = (best_accuracy - 0.4635) * 100
-    print(f"Improvement: +{improvement:.2f} percentage points")
