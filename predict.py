@@ -434,6 +434,179 @@ tf_accuracy = accuracy_score(y_test, tf_pred)
 print(f"Advanced TensorFlow NN Accuracy: {tf_accuracy:.4f}")
 
 # -----------------------------------------------------------------------------------
+# ADVANCED IMPROVEMENT 7: PyTorch Neural Network with Advanced Architecture
+# -----------------------------------------------------------------------------------
+
+print("Training Advanced PyTorch NN...")
+
+# Advanced PyTorch model with residual connections and attention
+class AdvancedFootballNet(nn.Module):
+    def __init__(self, input_dim, num_classes=3):
+        super(AdvancedFootballNet, self).__init__()
+        
+        # Main pathway
+        self.input_norm = nn.BatchNorm1d(input_dim)
+        self.fc1 = nn.Linear(input_dim, 512)
+        self.bn1 = nn.BatchNorm1d(512)
+        self.dropout1 = nn.Dropout(0.4)
+        
+        self.fc2 = nn.Linear(512, 256)
+        self.bn2 = nn.BatchNorm1d(256)
+        self.dropout2 = nn.Dropout(0.3)
+        
+        self.fc3 = nn.Linear(256, 128)
+        self.bn3 = nn.BatchNorm1d(128)
+        self.dropout3 = nn.Dropout(0.2)
+        
+        # Residual connection
+        self.residual = nn.Linear(input_dim, 128)
+        
+        # Attention mechanism
+        self.attention = nn.MultiheadAttention(embed_dim=128, num_heads=8, dropout=0.1, batch_first=True)
+        
+        # Final layers
+        self.fc4 = nn.Linear(128, 64)
+        self.bn4 = nn.BatchNorm1d(64)
+        self.dropout4 = nn.Dropout(0.1)
+        
+        self.output = nn.Linear(64, num_classes)
+        
+    def forward(self, x):
+        # Input normalization
+        x_norm = self.input_norm(x)
+        
+        # Main pathway
+        out = F.relu(self.bn1(self.fc1(x_norm)))
+        out = self.dropout1(out)
+        
+        out = F.relu(self.bn2(self.fc2(out)))
+        out = self.dropout2(out)
+        
+        out = F.relu(self.bn3(self.fc3(out)))
+        out = self.dropout3(out)
+        
+        # Residual connection
+        residual = self.residual(x_norm)
+        out = out + residual
+        out = F.relu(out)
+        
+        # Attention mechanism (reshape for multi-head attention)
+        out_reshaped = out.unsqueeze(1)  # Add sequence dimension
+        attended, _ = self.attention(out_reshaped, out_reshaped, out_reshaped)
+        out = attended.squeeze(1)  # Remove sequence dimension
+        
+        # Final layers
+        out = F.relu(self.bn4(self.fc4(out)))
+        out = self.dropout4(out)
+        
+        out = self.output(out)
+        return out
+
+# Prepare PyTorch data
+X_train_tensor = torch.FloatTensor(X_train)
+X_test_tensor = torch.FloatTensor(X_test)
+y_train_tensor = torch.LongTensor(y_train)
+y_test_tensor = torch.LongTensor(y_test)
+
+# Create datasets and data loaders
+train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
+test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
+
+train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+
+# Initialize model
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+pytorch_model = AdvancedFootballNet(X_train.shape[1]).to(device)
+
+# Loss function with class weights
+class_weights_tensor = torch.FloatTensor(class_weights).to(device)
+criterion = nn.CrossEntropyLoss(weight=class_weights_tensor)
+
+# Optimizer with weight decay
+optimizer = torch.optim.AdamW(pytorch_model.parameters(), lr=0.001, weight_decay=0.01)
+
+# Learning rate scheduler
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=10, factor=0.5)
+
+# Training loop with early stopping
+pytorch_model.train()
+best_val_loss = float('inf')
+patience_counter = 0
+patience = 20
+
+# Split training data for validation
+val_split = int(0.8 * len(train_dataset))
+train_subset = torch.utils.data.Subset(train_dataset, range(val_split))
+val_subset = torch.utils.data.Subset(train_dataset, range(val_split, len(train_dataset)))
+
+train_sub_loader = DataLoader(train_subset, batch_size=64, shuffle=True)
+val_loader = DataLoader(val_subset, batch_size=64, shuffle=False)
+
+for epoch in range(150):
+    # Training
+    pytorch_model.train()
+    train_loss = 0.0
+    for batch_x, batch_y in train_sub_loader:
+        batch_x, batch_y = batch_x.to(device), batch_y.to(device)
+        
+        optimizer.zero_grad()
+        outputs = pytorch_model(batch_x)
+        loss = criterion(outputs, batch_y)
+        loss.backward()
+        
+        # Gradient clipping
+        torch.nn.utils.clip_grad_norm_(pytorch_model.parameters(), max_norm=1.0)
+        
+        optimizer.step()
+        train_loss += loss.item()
+    
+    # Validation
+    pytorch_model.eval()
+    val_loss = 0.0
+    with torch.no_grad():
+        for batch_x, batch_y in val_loader:
+            batch_x, batch_y = batch_x.to(device), batch_y.to(device)
+            outputs = pytorch_model(batch_x)
+            loss = criterion(outputs, batch_y)
+            val_loss += loss.item()
+    
+    val_loss /= len(val_loader)
+    scheduler.step(val_loss)
+    
+    # Early stopping
+    if val_loss < best_val_loss:
+        best_val_loss = val_loss
+        patience_counter = 0
+        # Save best model
+        torch.save(pytorch_model.state_dict(), 'best_pytorch_model.pth')
+    else:
+        patience_counter += 1
+        if patience_counter >= patience:
+            break
+
+# Load best model and evaluate
+pytorch_model.load_state_dict(torch.load('best_pytorch_model.pth'))
+pytorch_model.eval()
+
+# Prediction
+pytorch_predictions = []
+with torch.no_grad():
+    for batch_x, _ in test_loader:
+        batch_x = batch_x.to(device)
+        outputs = pytorch_model(batch_x)
+        predictions = torch.argmax(outputs, dim=1)
+        pytorch_predictions.extend(predictions.cpu().numpy())
+
+pytorch_accuracy = accuracy_score(y_test, pytorch_predictions)
+print(f"Advanced PyTorch NN Accuracy: {pytorch_accuracy:.4f}")
+
+# Clean up temporary file
+import os
+if os.path.exists('best_pytorch_model.pth'):
+    os.remove('best_pytorch_model.pth')
+
+# -----------------------------------------------------------------------------------
 # FINAL RESULTS AND COMPARISON
 # -----------------------------------------------------------------------------------
 
