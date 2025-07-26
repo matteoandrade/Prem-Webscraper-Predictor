@@ -611,7 +611,7 @@ if os.path.exists('best_pytorch_model.pth'):
 # -----------------------------------------------------------------------------------
 
 print("\n" + "="*60)
-print("🏆 FINAL ADVANCED MODEL COMPARISON")
+print("FINAL ADVANCED MODEL COMPARISON")
 print("="*60)
 
 # Collect all results
@@ -628,33 +628,33 @@ for name, results in calibrated_results.items():
 # Sort by accuracy
 all_results.sort(key=lambda x: x[1], reverse=True)
 
-print("\n📊 Model Rankings:")
+print("\nModel Rankings:")
 for i, (name, acc) in enumerate(all_results, 1):
     print(f"{i:2d}. {name:25s}: {acc:.4f}")
 
 # Best model analysis
 best_model_name, best_accuracy = all_results[0]
-print(f"\n🥇 Best Model: {best_model_name}")
-print(f"🎯 Best Accuracy: {best_accuracy:.4f} ({best_accuracy:.2%})")
+print(f"\nBest Model: {best_model_name}")
+print(f"Best Accuracy: {best_accuracy:.4f} ({best_accuracy:.2%})")
 
 # Improvement analysis
 original_best = 0.5599  # From your previous output
 improvement = best_accuracy - original_best
-print(f"\n📈 IMPROVEMENT ANALYSIS:")
+print(f"\nIMPROVEMENT ANALYSIS:")
 print(f"Previous Best (Tuned Random Forest): {original_best:.4f}")
 print(f"New Best ({best_model_name}): {best_accuracy:.4f}")
 if improvement > 0:
-    print(f"🚀 Improvement: +{improvement:.4f} ({improvement*100:.2f} percentage points)")
-    print(f"💪 Relative improvement: {(improvement/original_best)*100:.1f}%")
+    print(f"Improvement: +{improvement:.4f} ({improvement*100:.2f} percentage points)")
+    print(f"Relative improvement: {(improvement/original_best)*100:.1f}%")
 else:
-    print(f"📊 Performance maintained within expected variance")
+    print(f"Performance maintained within expected variance")
 
 # Detailed analysis of best model
 if best_model_name == 'Stacking Ensemble':
-    print(f"\n📋 Stacking Ensemble Classification Report:")
+    print(f"\nStacking Ensemble Classification Report:")
     print(classification_report(y_test, stacking_pred, target_names=["Loss", "Draw", "Win"]))
 elif 'XGBoost' in best_model_name:
-    print(f"\n📋 {best_model_name} Classification Report:")
+    print(f"\n{best_model_name} Classification Report:")
     if best_model_name == 'XGBoost (with early stopping)':
         print(classification_report(y_test, xgb_pred, target_names=["Loss", "Draw", "Win"]))
     else:
@@ -662,7 +662,7 @@ elif 'XGBoost' in best_model_name:
         print(classification_report(y_test, calibrated_pred, target_names=["Loss", "Draw", "Win"]))
 
 # Feature importance analysis (XGBoost)
-print(f"\n🔍 TOP 15 MOST IMPORTANT FEATURES (XGBoost):")
+print(f"\nTOP 15 MOST IMPORTANT FEATURES (XGBoost):")
 feature_importance = pd.DataFrame({
     'feature': feature_cols,
     'importance': xgb_model_with_early_stop.feature_importances_
@@ -670,13 +670,13 @@ feature_importance = pd.DataFrame({
 
 print(feature_importance.head(15).to_string(index=False))
 
-print(f"\n✅ ADVANCED IMPROVEMENTS COMPLETE!")
-print(f"🎯 Target Range: 58-62% | Achieved: {best_accuracy:.2%}")
+print(f"\nADVANCED IMPROVEMENTS COMPLETE!")
+print(f"Target Range: 58-62% | Achieved: {best_accuracy:.2%}")
 
 if best_accuracy >= 0.58:
-    print(f"🎉 SUCCESS: Reached target performance!")
+    print(f"SUCCESS: Reached target performance!")
 else:
-    print(f"📊 Good progress! Consider adding external data for further gains.")
+    print(f"Good progress! Consider adding external data for further gains.")
 
-print(f"\n🏆 Your model is now performing at {best_accuracy:.1%} accuracy!")
-print(f"   This puts you in the top tier of football prediction models! 🚀")
+print(f"\nYour model is now performing at {best_accuracy:.1%} accuracy!")
+print(f"   This puts you in the top tier of football prediction models!")
