@@ -375,7 +375,7 @@ for name, model in models_to_calibrate.items():
     print(f"  {name}: Accuracy {accuracy:.4f}, Log Loss {logloss:.4f}")
 
 # -----------------------------------------------------------------------------------
-# ADVANCED IMPROVEMENT 6: Enhanced Neural Networks
+# ADVANCED IMPROVEMENT 6: Enhanced TensorFlow Neural Networks
 # -----------------------------------------------------------------------------------
 
 print("\nTraining Advanced Neural Networks...")
@@ -618,7 +618,8 @@ print("="*60)
 all_results = [
     ('XGBoost (with early stopping)', xgb_accuracy),
     ('Stacking Ensemble', stacking_accuracy),
-    ('Advanced TensorFlow NN', tf_accuracy)
+    ('Advanced TensorFlow NN', tf_accuracy),
+    ('Advanced PyTorch NN', pytorch_accuracy)
 ]
 
 # Add calibrated model results
