@@ -54,8 +54,14 @@ def create_advanced_features(df):
     df["defensive_efficiency"] = df["xGA"] / (df["GA"] + 1e-6)
     df["recent_form"] = df["points"] / 3
     
-    # NEW: Momentum and streak features
+    # NEW: More features
     df['result_binary'] = (df['points'] == 3).astype(int)
+    df['possession_efficiency'] = df['GF'] / (df['Poss'] + 1e-6)  # Goals per possession %
+    df['shots_per_possession'] = df['Sh'] / (df['Poss'] + 1e-6)
+    df['xg_per_shot'] = df['xG'] / (df['Sh'] + 1e-6)
+    df['big_chances'] = df['SoT'] - df['GF']  # Shots on target that didn't go in
+    df['conversion_rate'] = df['GF'] / (df['SoT'] + 1e-6)
+    df['defensive_actions'] = df['FK'] + df['PK']  # Proxy for defensive pressure
     
     # Win streak calculation
     def calculate_streaks(group):
@@ -70,6 +76,12 @@ def create_advanced_features(df):
         
         # Form volatility
         group['form_volatility'] = group['points'].rolling(5, min_periods=1).std().fillna(0)
+
+        # NEW: Recent scoring/conceding trends
+        group['recent_attack'] = group['GF'].rolling(3, min_periods=1).mean()
+        group['recent_defense'] = group['GA'].rolling(3, min_periods=1).mean()
+        group['attack_trend'] = group['GF'].rolling(3, min_periods=1).mean() - group['GF'].rolling(6, min_periods=1).mean()
+        group['defense_trend'] = group['GA'].rolling(3, min_periods=1).mean() - group['GA'].rolling(6, min_periods=1).mean()
         
         return group
     
@@ -79,6 +91,10 @@ def create_advanced_features(df):
     df['month'] = df['date'].dt.month
     df['is_weekend'] = df['day_num'].isin([5, 6]).astype(int)
     df['season'] = df['date'].dt.year + (df['date'].dt.month >= 8).astype(int)
+
+    # NEW: Time-based features
+    df['days_since_last_match'] = df.groupby('Team')['date'].diff().dt.days.fillna(7)
+    df['fixture_congestion'] = (df['days_since_last_match'] <= 3).astype(int)
     
     return df
 
