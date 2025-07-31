@@ -132,21 +132,29 @@ matches_roll, roll_cols = apply_rolling_averages(matches, historical_cols, windo
 def calculate_team_ratings(df):
     """Calculate ELO-like team ratings"""
     team_ratings = {}
-    K = 30
+    home = 50
+    K_min = 30
     
     for _, match in df.sort_values('date').iterrows():
         team = match['Team']
         opponent = match['Opponent']
         result = match['points']
+        is_home = match.get('venue_num', 0) == 0
         
         if team not in team_ratings:
             team_ratings[team] = 1500
         if opponent not in team_ratings:
             team_ratings[opponent] = 1500
+
+        team_rating_adj = team_ratings[team] + (home if is_home else 0)
+        opp_rating_adj = team_ratings[opponent] + (0 if is_home else home)
             
-        rating_diff = team_ratings[opponent] - team_ratings[team]
+        rating_diff = opp_rating_adj - team_rating_adj
         expected = 1 / (1 + 10 ** (rating_diff / 400))
         actual = result / 3
+
+        K = K_min * (1 + abs(rating_diff)/400)
+        K = min(K, 60)
         
         team_ratings[team] += K * (actual - expected)
         team_ratings[opponent] += K * (expected - actual)
