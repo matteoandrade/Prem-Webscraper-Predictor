@@ -3,7 +3,7 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, log_loss
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, RobustScaler, PowerTransformer
 from sklearn.utils.class_weight import compute_class_weight
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.calibration import CalibratedClassifierCV
@@ -189,7 +189,7 @@ X_clean = X_data[valid_idx]
 y_clean = y_data[valid_idx]
 dates_clean = matches_roll.loc[valid_idx, "date"]
 
-print(f"📊 Dataset shape after cleaning: {X_clean.shape}")
+print(f"Dataset shape after cleaning: {X_clean.shape}")
 
 # Scale features
 scaler = StandardScaler()
@@ -211,26 +211,23 @@ if X_test.shape[0] == 0:
     y_train = y_clean.iloc[:split_idx].values
     y_test = y_clean.iloc[split_idx:].values
 
-print(f"🎯 Training set: {X_train.shape[0]}, Test set: {X_test.shape[0]}")
-
-# -----------------------------------------------------------------------------------
-# ADVANCED IMPROVEMENT 3: XGBoost Implementation
-# -----------------------------------------------------------------------------------
+print(f"Training set: {X_train.shape[0]}, Test set: {X_test.shape[0]}")
 
 print("\n" + "="*60)
-print("🚀 TRAINING ADVANCED MODELS")
+print("TRAINING ADVANCED MODELS")
 print("="*60)
 
 # XGBoost with optimized parameters
 print("Training XGBoost...")
 xgb_model = xgb.XGBClassifier(
-    n_estimators=200,  # Reduced since we won't use early stopping in stacking
-    max_depth=6,
-    learning_rate=0.05,
-    subsample=0.8,
+    n_estimators=300,
+    max_depth=7,
+    learning_rate=0.03,
+    subsample=0.85,
     colsample_bytree=0.8,
-    reg_alpha=0.1,
-    reg_lambda=1.0,
+    colsample_bylevel=0.8,
+    reg_alpha=0.05,
+    reg_lambda=1.5,
     random_state=42,
     eval_metric='mlogloss',
     verbosity=0
@@ -260,10 +257,6 @@ xgb_model_with_early_stop.fit(
 xgb_pred = xgb_model_with_early_stop.predict(X_test)
 xgb_accuracy = accuracy_score(y_test, xgb_pred)
 print(f"XGBoost Accuracy: {xgb_accuracy:.4f}")
-
-# -----------------------------------------------------------------------------------
-# ADVANCED IMPROVEMENT 4: Stacking Ensemble
-# -----------------------------------------------------------------------------------
 
 class StackingEnsemble:
     def __init__(self, base_models, meta_model):
@@ -345,10 +338,6 @@ stacking_ensemble.fit(X_train, y_train)
 stacking_pred = stacking_ensemble.predict(X_test)
 stacking_accuracy = accuracy_score(y_test, stacking_pred)
 print(f"Stacking Ensemble Accuracy: {stacking_accuracy:.4f}")
-
-# -----------------------------------------------------------------------------------
-# ADVANCED IMPROVEMENT 5: Probability Calibration (FIXED)
-# -----------------------------------------------------------------------------------
 
 print("\nApplying Probability Calibration...")
 
