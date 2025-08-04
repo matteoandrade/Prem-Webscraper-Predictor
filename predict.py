@@ -457,63 +457,81 @@ class AdvancedFootballNet(nn.Module):
     def __init__(self, input_dim, num_classes=3):
         super(AdvancedFootballNet, self).__init__()
         
-        # Main pathway
-        self.input_norm = nn.BatchNorm1d(input_dim)
-        self.fc1 = nn.Linear(input_dim, 512)
-        self.bn1 = nn.BatchNorm1d(512)
-        self.dropout1 = nn.Dropout(0.4)
+        # Feature selection layer (learnable feature importance)
+        self.feature_attention = nn.Linear(input_dim, input_dim)
+        self.input_norm = nn.LayerNorm(input_dim)  # LayerNorm instead of BatchNorm
         
-        self.fc2 = nn.Linear(512, 256)
-        self.bn2 = nn.BatchNorm1d(256)
-        self.dropout2 = nn.Dropout(0.3)
+        # Main pathway with skip connections
+        self.fc1 = nn.Linear(input_dim, 640)  # Slightly larger
+        self.ln1 = nn.LayerNorm(640)
+        self.dropout1 = nn.Dropout(0.35)
         
-        self.fc3 = nn.Linear(256, 128)
-        self.bn3 = nn.BatchNorm1d(128)
-        self.dropout3 = nn.Dropout(0.2)
+        self.fc2 = nn.Linear(640, 320)
+        self.ln2 = nn.LayerNorm(320)
+        self.dropout2 = nn.Dropout(0.25)
         
-        # Residual connection
-        self.residual = nn.Linear(input_dim, 128)
+        self.fc3 = nn.Linear(320, 160)
+        self.ln3 = nn.LayerNorm(160)
+        self.dropout3 = nn.Dropout(0.15)
         
-        # Attention mechanism
-        self.attention = nn.MultiheadAttention(embed_dim=128, num_heads=8, dropout=0.1, batch_first=True)
+        # Multiple residual connections
+        self.residual1 = nn.Linear(input_dim, 320)
+        self.residual2 = nn.Linear(320, 160)
         
-        # Final layers
-        self.fc4 = nn.Linear(128, 64)
-        self.bn4 = nn.BatchNorm1d(64)
+        # Enhanced attention
+        self.self_attention = nn.MultiheadAttention(
+            embed_dim=160, num_heads=8, dropout=0.1, batch_first=True
+        )
+        
+        # Final layers with squeeze-and-excitation
+        self.se_fc1 = nn.Linear(160, 40)
+        self.se_fc2 = nn.Linear(40, 160)
+        
+        self.fc4 = nn.Linear(160, 80)
+        self.ln4 = nn.LayerNorm(80)
         self.dropout4 = nn.Dropout(0.1)
         
-        self.output = nn.Linear(64, num_classes)
+        self.output = nn.Linear(80, num_classes)
         
     def forward(self, x):
-        # Input normalization
-        x_norm = self.input_norm(x)
+        # Feature attention
+        attention_weights = torch.sigmoid(self.feature_attention(x))
+        x_attended = x * attention_weights
+        x_norm = self.input_norm(x_attended)
         
         # Main pathway
-        out = F.relu(self.bn1(self.fc1(x_norm)))
-        out = self.dropout1(out)
+        out1 = F.gelu(self.ln1(self.fc1(x_norm)))  # GELU instead of ReLU
+        out1 = self.dropout1(out1)
         
-        out = F.relu(self.bn2(self.fc2(out)))
-        out = self.dropout2(out)
+        out2 = F.gelu(self.ln2(self.fc2(out1)))
+        out2 = self.dropout2(out2)
         
-        out = F.relu(self.bn3(self.fc3(out)))
-        out = self.dropout3(out)
+        # Add residual connection
+        residual1 = self.residual1(x_norm)
+        out2 = out2 + residual1
         
-        # Residual connection
-        residual = self.residual(x_norm)
-        out = out + residual
-        out = F.relu(out)
+        out3 = F.gelu(self.ln3(self.fc3(out2)))
+        out3 = self.dropout3(out3)
         
-        # Attention mechanism (reshape for multi-head attention)
-        out_reshaped = out.unsqueeze(1)  # Add sequence dimension
-        attended, _ = self.attention(out_reshaped, out_reshaped, out_reshaped)
-        out = attended.squeeze(1)  # Remove sequence dimension
+        # Add another residual connection
+        residual2 = self.residual2(out2)
+        out3 = out3 + residual2
+        
+        # Self-attention
+        out3_reshaped = out3.unsqueeze(1)
+        attended, _ = self.self_attention(out3_reshaped, out3_reshaped, out3_reshaped)
+        out3 = attended.squeeze(1)
+        
+        # Squeeze-and-excitation block
+        se_weights = F.relu(self.se_fc1(F.adaptive_avg_pool1d(out3.unsqueeze(-1), 1).squeeze(-1)))
+        se_weights = torch.sigmoid(self.se_fc2(se_weights))
+        out3 = out3 * se_weights
         
         # Final layers
-        out = F.relu(self.bn4(self.fc4(out)))
-        out = self.dropout4(out)
+        out4 = F.gelu(self.ln4(self.fc4(out3)))
+        out4 = self.dropout4(out4)
         
-        out = self.output(out)
-        return out
+        return self.output(out4)
 
 # Prepare PyTorch data
 X_train_tensor = torch.FloatTensor(X_train)
