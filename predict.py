@@ -42,11 +42,11 @@ matches["points"] = matches["Result"].apply(res_pts)
 
 # ADVANCED IMPROVEMENT 1: Comprehensive Feature Engineering
 def create_advanced_features(df):
-    """Create all advanced features in one function"""
+    """Enhanced feature engineering - replace existing function"""
     df = df.copy()
     df = df.sort_values(['Team', 'date'])
     
-    # Basic derived features
+    # Basic derived features (keep existing)
     df["gd"] = df["GF"] - df["GA"]
     df["shot_accuracy"] = df["SoT"] / (df["Sh"] + 1e-6)
     df["xgd"] = df["xG"] - df["xGA"]
@@ -54,45 +54,57 @@ def create_advanced_features(df):
     df["defensive_efficiency"] = df["xGA"] / (df["GA"] + 1e-6)
     df["recent_form"] = df["points"] / 3
     
-    # NEW: More features
+    # ENHANCED: More powerful features
     df['result_binary'] = (df['points'] == 3).astype(int)
-    df['possession_efficiency'] = df['GF'] / (df['Poss'] + 1e-6)  # Goals per possession %
+    df['draw_binary'] = (df['points'] == 1).astype(int) 
+    
+    # ENHANCED: Better efficiency metrics
+    df['possession_efficiency'] = df['GF'] / (df['Poss'] + 1e-6)
     df['shots_per_possession'] = df['Sh'] / (df['Poss'] + 1e-6)
     df['xg_per_shot'] = df['xG'] / (df['Sh'] + 1e-6)
-    df['big_chances'] = df['SoT'] - df['GF']  # Shots on target that didn't go in
     df['conversion_rate'] = df['GF'] / (df['SoT'] + 1e-6)
-    df['defensive_actions'] = df['FK'] + df['PK']  # Proxy for defensive pressure
+    df['defensive_actions'] = df['FK'] + df['PK']
     
-    # Win streak calculation
+    # Performance vs expectation
+    df['xg_overperformance'] = df['GF'] - df['xG']
+    df['xa_underperformance'] = df['xGA'] - df['GA']
+    df['shot_quality'] = df['SoT'] / (df['Sh'] + 1e-6)
+    df['big_chances_missed'] = df['SoT'] - df['GF']
+    
     def calculate_streaks(group):
-        # Current win streak
-        group['win_streak'] = group['result_binary'].groupby(
-            (group['result_binary'] != group['result_binary'].shift()).cumsum()
-        ).cumcount() + 1
+        # Enhanced streak calculation
+        group['win_streak'] = group['result_binary'].groupby( (group['result_binary'] != group['result_binary'].shift()).cumsum() ).cumcount() + 1
         group['win_streak'] = group['win_streak'] * group['result_binary']
         
-        # Points momentum (last 5 games)
-        group['ppg_momentum'] = group['points'].rolling(5, min_periods=1).mean()
+        # Unbeaten streak (wins + draws)
+        group['unbeaten'] = ((group['points'] >= 1).astype(int))
+        group['unbeaten_streak'] = group['unbeaten'].groupby(
+            (group['unbeaten'] != group['unbeaten'].shift()).cumsum()
+        ).cumcount() + 1
+        group['unbeaten_streak'] = group['unbeaten_streak'] * group['unbeaten']
         
-        # Form volatility
+        # Enhanced momentum
+        group['ppg_momentum'] = group['points'].rolling(5, min_periods=1).mean()
         group['form_volatility'] = group['points'].rolling(5, min_periods=1).std().fillna(0)
-
-        # NEW: Recent scoring/conceding trends
+        
+        # Trend analysis (critical for prediction!)
+        group['recent_gd_trend'] = (group['gd'].rolling(3, min_periods=1).mean() - group['gd'].rolling(6, min_periods=1).mean()).fillna(0)
+        group['recent_xg_trend'] = (group['xG'].rolling(3, min_periods=1).mean() - group['xG'].rolling(6, min_periods=1).mean()).fillna(0)
+        group['recent_conversion_trend'] = (group['conversion_rate'].rolling(3, min_periods=1).mean() - group['conversion_rate'].rolling(6, min_periods=1).mean()).fillna(0)
+        
         group['recent_attack'] = group['GF'].rolling(3, min_periods=1).mean()
         group['recent_defense'] = group['GA'].rolling(3, min_periods=1).mean()
-        group['attack_trend'] = group['GF'].rolling(3, min_periods=1).mean() - group['GF'].rolling(6, min_periods=1).mean()
-        group['defense_trend'] = group['GA'].rolling(3, min_periods=1).mean() - group['GA'].rolling(6, min_periods=1).mean()
+        group['attack_trend']  = (group['GF'].rolling(3, min_periods=1).mean() - group['GF'].rolling(6, min_periods=1).mean()).fillna(0)
+        group['defense_trend'] = (group['GA'].rolling(3, min_periods=1).mean() - group['GA'].rolling(6, min_periods=1).mean()).fillna(0)
         
         return group
     
     df = df.groupby('Team', group_keys=False).apply(calculate_streaks)
     
-    # Seasonal features
+    # Keep your existing seasonal features
     df['month'] = df['date'].dt.month
     df['is_weekend'] = df['day_num'].isin([5, 6]).astype(int)
     df['season'] = df['date'].dt.year + (df['date'].dt.month >= 8).astype(int)
-
-    # NEW: Time-based features
     df['days_since_last_match'] = df.groupby('Team')['date'].diff().dt.days.fillna(7)
     df['fixture_congestion'] = (df['days_since_last_match'] <= 3).astype(int)
     
@@ -172,9 +184,9 @@ contextual_features = ['venue_num', 'opp_num', 'hour', 'day_num', 'month', 'is_w
                       'team_rating', 'opp_rating', 'rating_diff']
 feature_cols = contextual_features + roll_cols
 
-print(f"🔢 Total features: {len(feature_cols)}")
-print(f"   - Contextual features: {len(contextual_features)}")
-print(f"   - Rolling average features: {len(roll_cols)}")
+print(f"Total features: {len(feature_cols)}")
+print(f"Contextual features: {len(contextual_features)}")
+print(f"Rolling average features: {len(roll_cols)}")
 
 # Prepare data
 X_data = matches_roll[feature_cols].copy()
@@ -711,4 +723,4 @@ else:
     print(f"Good progress! Consider adding external data for further gains.")
 
 print(f"\nYour model is now performing at {best_accuracy:.1%} accuracy!")
-print(f"   This puts you in the top tier of football prediction models!")
+print(f"This puts you in the top tier of football prediction models!")
