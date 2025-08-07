@@ -114,9 +114,14 @@ def create_advanced_features(df):
 matches = create_advanced_features(matches)
 
 # Enhanced historical columns
-historical_cols = ["GF", "GA", "Sh", "SoT", "Dist", "FK", "PK", "PKatt", "xG", "xGA", "Poss", 
-                  "gd", "recent_form", "shot_accuracy", "xgd", "goal_efficiency", "defensive_efficiency",
-                  "win_streak", "ppg_momentum", "form_volatility"]
+historical_cols = [
+    "GF", "GA", "Sh", "SoT", "Dist", "FK", "PK", "PKatt", "xG", "xGA", "Poss", 
+    "gd", "recent_form", "shot_accuracy", "xgd", "goal_efficiency", "defensive_efficiency",
+    "win_streak", "unbeaten_streak", "ppg_momentum", "form_volatility",
+    "possession_efficiency", "shots_per_possession", "xg_per_shot", "conversion_rate",
+    "xg_overperformance", "xa_underperformance", "shot_quality", "big_chances_missed",
+    "recent_gd_trend", "recent_xg_trend", "recent_conversion_trend"
+]
 
 def rolling_avg(group, col, new_col, window):
     group = group.sort_values("date")
