@@ -217,8 +217,12 @@ matches_roll['away_rating'] = matches_roll['Team'].map(away_ratings)
 matches_roll['is_home'] = (matches_roll['venue_num'] == 0).astype(int)
 
 # Create comprehensive feature set
-contextual_features = ['venue_num', 'opp_num', 'hour', 'day_num', 'month', 'is_weekend', 
-                      'team_rating', 'opp_rating', 'rating_diff']
+contextual_features = [
+    'venue_num', 'opp_num', 'hour', 'day_num', 'month', 'is_weekend', 
+    'team_rating', 'opp_rating', 'rating_diff', 'home_rating', 'away_rating', 'is_home',
+    'fixture_congestion'
+]
+
 feature_cols = contextual_features + roll_cols
 
 print(f"Total features: {len(feature_cols)}")
