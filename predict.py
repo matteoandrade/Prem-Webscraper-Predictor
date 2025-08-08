@@ -205,11 +205,16 @@ def calculate_team_ratings(df):
     
     return team_ratings, home_ratings, away_ratings
 
-# Calculate and add team ratings
-team_ratings = calculate_team_ratings(matches_roll)
+print("Calculating enhanced team ratings...")
+team_ratings, home_ratings, away_ratings = calculate_team_ratings(matches_roll)
 matches_roll['team_rating'] = matches_roll['Team'].map(team_ratings)
 matches_roll['opp_rating'] = matches_roll['Opponent'].map(team_ratings)
 matches_roll['rating_diff'] = matches_roll['team_rating'] - matches_roll['opp_rating']
+
+# Add home/away specific ratings
+matches_roll['home_rating'] = matches_roll['Team'].map(home_ratings)  
+matches_roll['away_rating'] = matches_roll['Team'].map(away_ratings)
+matches_roll['is_home'] = (matches_roll['venue_num'] == 0).astype(int)
 
 # Create comprehensive feature set
 contextual_features = ['venue_num', 'opp_num', 'hour', 'day_num', 'month', 'is_weekend', 
