@@ -145,38 +145,65 @@ def apply_rolling_averages(data, cols, windows=[3, 5, 10]):
 # Get rolling averages
 matches_roll, roll_cols = apply_rolling_averages(matches, historical_cols, windows=cons_win)
 
-# ADVANCED IMPROVEMENT 2: Team Rating System (ELO)
+# Team Rating System (ELO)
 def calculate_team_ratings(df):
-    """Calculate ELO-like team ratings"""
+    """Enhanced ELO with home advantage and form weighting"""
     team_ratings = {}
-    home = 50
-    K_min = 30
+    home_ratings = {}
+    away_ratings = {}
+    home_advantage = 65 
+    K_base = 30
     
     for _, match in df.sort_values('date').iterrows():
         team = match['Team']
         opponent = match['Opponent']
         result = match['points']
-        is_home = match.get('venue_num', 0) == 0
         
+        # Initialize all rating types
         if team not in team_ratings:
             team_ratings[team] = 1500
+            home_ratings[team] = 1500
+            away_ratings[team] = 1500
         if opponent not in team_ratings:
             team_ratings[opponent] = 1500
-
-        team_rating_adj = team_ratings[team] + (home if is_home else 0)
-        opp_rating_adj = team_ratings[opponent] + (0 if is_home else home)
-            
-        rating_diff = opp_rating_adj - team_rating_adj
+            home_ratings[opponent] = 1500
+            away_ratings[opponent] = 1500
+        
+        # Determine home/away (venue_num 0 often means home)
+        is_home = match['venue_num'] == 0
+        
+        # Use appropriate ratings
+        if is_home:
+            team_rating = home_ratings[team] + home_advantage
+            opp_rating = away_ratings[opponent]
+        else:
+            team_rating = away_ratings[team]
+            opp_rating = home_ratings[opponent] + home_advantage
+        
+        rating_diff = opp_rating - team_rating
         expected = 1 / (1 + 10 ** (rating_diff / 400))
         actual = result / 3
-
-        K = K_min * (1 + abs(rating_diff)/400)
+        
+        # Dynamic K-factor based on rating difference and importance
+        K = K_base * (1 + abs(rating_diff) / 400)
         K = min(K, 60)
         
-        team_ratings[team] += K * (actual - expected)
-        team_ratings[opponent] += K * (expected - actual)
+        # Update all rating systems
+        change = K * (actual - expected)
+        team_ratings[team] += change
+        if is_home:
+            home_ratings[team] += change
+        else:
+            away_ratings[team] += change
+            
+        # Update opponent (inverse)
+        team_ratings[opponent] -= change
+        if is_home:
+            away_ratings[opponent] -= change
+        else:
+            home_ratings[opponent] -= change
     
-    return team_ratings
+    return team_ratings, home_ratings, away_ratings
 
 # Calculate and add team ratings
 team_ratings = calculate_team_ratings(matches_roll)
