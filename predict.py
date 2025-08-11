@@ -273,14 +273,17 @@ print("="*60)
 # XGBoost with optimized parameters
 print("Training XGBoost...")
 xgb_model = xgb.XGBClassifier(
-    n_estimators=300,
-    max_depth=7,
-    learning_rate=0.03,
+    n_estimators=400,
+    max_depth=8,
+    learning_rate=0.025,
     subsample=0.85,
     colsample_bytree=0.8,
     colsample_bylevel=0.8,
-    reg_alpha=0.05,
-    reg_lambda=1.5,
+    colsample_bynode=0.7,
+    reg_alpha=0.01,
+    reg_lambda=2.0,
+    min_child_weight=3,
+    gamma=0.1,
     random_state=42,
     eval_metric='mlogloss',
     verbosity=0
