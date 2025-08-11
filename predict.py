@@ -291,16 +291,19 @@ xgb_model = xgb.XGBClassifier(
 
 # Fit with early stopping only for the main model
 xgb_model_with_early_stop = xgb.XGBClassifier(
-    n_estimators=300,
-    max_depth=6,
-    learning_rate=0.05,
-    subsample=0.8,
+    n_estimators=400,
+    max_depth=8,
+    learning_rate=0.025,
+    subsample=0.85,
     colsample_bytree=0.8,
-    reg_alpha=0.1,
-    reg_lambda=1.0,
+    colsample_bylevel=0.8,
+    colsample_bynode=0.7,
+    reg_alpha=0.01,
+    reg_lambda=2.0,
+    min_child_weight=3,
+    gamma=0.1,
     random_state=42,
     eval_metric='mlogloss',
-    early_stopping_rounds=20,
     verbosity=0
 )
 
@@ -340,14 +343,19 @@ class StackingEnsemble:
                 if name == 'XGB':
                     # Create XGBoost without early stopping for cross-validation
                     fold_model = xgb.XGBClassifier(
-                        n_estimators=200,
-                        max_depth=6,
-                        learning_rate=0.05,
-                        subsample=0.8,
+                        n_estimators=400,
+                        max_depth=8,
+                        learning_rate=0.025,
+                        subsample=0.85,
                         colsample_bytree=0.8,
-                        reg_alpha=0.1,
-                        reg_lambda=1.0,
+                        colsample_bylevel=0.8,
+                        colsample_bynode=0.7,
+                        reg_alpha=0.01,
+                        reg_lambda=2.0,
+                        min_child_weight=3,
+                        gamma=0.1,
                         random_state=42,
+                        eval_metric='mlogloss',
                         verbosity=0
                     )
                 elif name == 'RF':
@@ -400,17 +408,20 @@ print("\nApplying Probability Calibration...")
 # Create models for calibration WITHOUT early stopping
 models_to_calibrate = {
     'XGBoost': xgb.XGBClassifier(
-        n_estimators=200,  # Fixed number, no early stopping
-        max_depth=6,
-        learning_rate=0.05,
-        subsample=0.8,
+        n_estimators=400,
+        max_depth=8,
+        learning_rate=0.025,
+        subsample=0.85,
         colsample_bytree=0.8,
-        reg_alpha=0.1,
-        reg_lambda=1.0,
+        colsample_bylevel=0.8,
+        colsample_bynode=0.7,
+        reg_alpha=0.01,
+        reg_lambda=2.0,
+        min_child_weight=3,
+        gamma=0.1,
         random_state=42,
         eval_metric='mlogloss',
         verbosity=0
-        # No early_stopping_rounds parameter
     ),
     'Random Forest': RandomForestClassifier(n_estimators=200, max_depth=15, random_state=42, class_weight='balanced'),
     'Gradient Boosting': GradientBoostingClassifier(n_estimators=150, max_depth=6, random_state=42)
