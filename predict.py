@@ -383,6 +383,80 @@ class StackingEnsemble:
     def predict(self, X):
         probs = self.predict_proba(X)
         return np.argmax(probs, axis=1)
+    
+print("\nTraining Enhanced Stacking Ensemble...")
+
+class EnhancedStackingEnsemble:
+    def __init__(self):
+        # More diverse base models with different strengths
+        self.base_models = {
+            'XGB_Deep': xgb.XGBClassifier(
+                n_estimators=200, max_depth=9, learning_rate=0.03,
+                subsample=0.8, colsample_bytree=0.7, reg_lambda=2.0,
+                random_state=42, verbosity=0
+            ),
+            'XGB_Wide': xgb.XGBClassifier(
+                n_estimators=300, max_depth=5, learning_rate=0.05,
+                subsample=0.9, colsample_bytree=0.9, reg_lambda=1.0,
+                random_state=43, verbosity=0
+            ),
+            'RF_Deep': RandomForestClassifier(
+                n_estimators=250, max_depth=15, min_samples_split=3,
+                min_samples_leaf=1, class_weight='balanced', random_state=42
+            ),
+            'RF_Wide': RandomForestClassifier(
+                n_estimators=200, max_depth=20, min_samples_split=5,
+                min_samples_leaf=2, class_weight='balanced', random_state=43
+            )
+        }
+        
+        # Use XGBoost as meta-learner (often better for this type of data)
+        self.meta_model = xgb.XGBClassifier(
+            n_estimators=100, max_depth=4, learning_rate=0.1,
+            random_state=42, verbosity=0
+        )
+        
+    def fit(self, X, y):
+        from sklearn.model_selection import StratifiedKFold
+        
+        # Train base models
+        for name, model in self.base_models.items():
+            model.fit(X, y)
+        
+        # Generate meta-features using stratified k-fold (better than TimeSeriesSplit here)
+        skf = StratifiedKFold(n_splits=4, shuffle=True, random_state=42)
+        meta_features = np.zeros((X.shape[0], len(self.base_models) * 3))
+        
+        for fold, (train_idx, val_idx) in enumerate(skf.split(X, y)):
+            X_fold_train, X_fold_val = X[train_idx], X[val_idx]
+            y_fold_train = y[train_idx]
+            
+            for i, (name, model) in enumerate(self.base_models.items()):
+                from sklearn.base import clone
+                fold_model = clone(model)
+                fold_model.fit(X_fold_train, y_fold_train)
+                probs = fold_model.predict_proba(X_fold_val)
+                meta_features[val_idx, i*3:(i+1)*3] = probs
+        
+        # Train meta-model
+        self.meta_model.fit(meta_features, y)
+        
+    def predict(self, X):
+        base_predictions = []
+        for name, model in self.base_models.items():
+            probs = model.predict_proba(X)
+            base_predictions.append(probs)
+        
+        meta_features = np.column_stack(base_predictions)
+        return self.meta_model.predict(meta_features)
+
+# Train enhanced stacking
+enhanced_stacking = EnhancedStackingEnsemble()
+enhanced_stacking.fit(X_train, y_train)
+
+enhanced_stacking_pred = enhanced_stacking.predict(X_test)
+enhanced_stacking_accuracy = accuracy_score(y_test, enhanced_stacking_pred)
+print(f"Enhanced Stacking Ensemble Accuracy: {enhanced_stacking_accuracy:.4f}")
 
 # Create base models for stacking (without early stopping)
 base_models = {
