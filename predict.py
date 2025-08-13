@@ -539,17 +539,13 @@ tf.random.set_seed(42)
 torch.manual_seed(42)
 
 # Advanced TensorFlow model
-def create_advanced_tf_model(input_dim):
+def create_effective_tf_model(input_dim):
+    """Simpler model that works better for tabular data"""
     model = tf.keras.models.Sequential([
         tf.keras.layers.Input(shape=(input_dim,)),
-        tf.keras.layers.Dense(512, activation='relu'),
-        tf.keras.layers.BatchNormalization(),
-        tf.keras.layers.Dropout(0.4),
         tf.keras.layers.Dense(256, activation='relu'),
-        tf.keras.layers.BatchNormalization(), 
         tf.keras.layers.Dropout(0.3),
         tf.keras.layers.Dense(128, activation='relu'),
-        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Dropout(0.2),
         tf.keras.layers.Dense(64, activation='relu'),
         tf.keras.layers.Dropout(0.1),
@@ -557,35 +553,30 @@ def create_advanced_tf_model(input_dim):
     ])
     
     model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.002),
         loss='sparse_categorical_crossentropy',
         metrics=['accuracy']
     )
     
     return model
 
-# Train TensorFlow model
-tf_model = create_advanced_tf_model(X_train.shape[1])
+# Replace your TensorFlow training with:
+print("Training Effective TensorFlow NN...")
+effective_tf_model = create_effective_tf_model(X_train.shape[1])
 
-class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y_train)
-class_weight_dict = {i: class_weights[i] for i in range(len(class_weights))}
-
-early_stopping = tf.keras.callbacks.EarlyStopping(patience=20, restore_best_weights=True, verbose=0)
-reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(patience=10, factor=0.5, verbose=0)
-
-tf_model.fit(
+effective_tf_model.fit(
     X_train, y_train,
-    epochs=150,
-    batch_size=64,
-    validation_split=0.2,
+    epochs=80,  # Fewer epochs
+    batch_size=32,  # Smaller batch size
+    validation_split=0.15,
     class_weight=class_weight_dict,
-    callbacks=[early_stopping, reduce_lr],
+    callbacks=[tf.keras.callbacks.EarlyStopping(patience=12, restore_best_weights=True)],
     verbose=0
 )
 
-tf_pred = tf_model.predict(X_test, verbose=0).argmax(axis=1)
-tf_accuracy = accuracy_score(y_test, tf_pred)
-print(f"Advanced TensorFlow NN Accuracy: {tf_accuracy:.4f}")
+effective_tf_pred = effective_tf_model.predict(X_test, verbose=0).argmax(axis=1)
+effective_tf_accuracy = accuracy_score(y_test, effective_tf_pred)
+print(f"Effective TensorFlow NN Accuracy: {effective_tf_accuracy:.4f}")
 
 # -----------------------------------------------------------------------------------
 # ADVANCED IMPROVEMENT 7: PyTorch Neural Network with Advanced Architecture
