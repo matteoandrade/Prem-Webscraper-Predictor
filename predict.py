@@ -794,32 +794,32 @@ for name, results in calibrated_results.items():
 # Sort by accuracy
 all_results.sort(key=lambda x: x[1], reverse=True)
 
-print("\n📊 Model Rankings:")
+print("\nModel Rankings:")
 for i, (name, acc) in enumerate(all_results, 1):
     print(f"{i:2d}. {name:30s}: {acc:.4f}")
 
 best_model_name, best_accuracy = all_results[0]
-print(f"\n🥇 Best Model: {best_model_name}")
-print(f"🎯 Best Accuracy: {best_accuracy:.4f} ({best_accuracy:.2%})")
+print(f"\nBest Model: {best_model_name}")
+print(f"Best Accuracy: {best_accuracy:.4f} ({best_accuracy:.2%})")
 
 # Expected improvement analysis
-print(f"\n📈 ENHANCEMENT ANALYSIS:")
+print(f"\nENHANCEMENT ANALYSIS:")
 print(f"Previous Best: 0.5677 (56.77%)")
 print(f"Enhanced Best: {best_accuracy:.4f} ({best_accuracy:.2%})")
 improvement = best_accuracy - 0.5677
 if improvement > 0:
-    print(f"🚀 Improvement: +{improvement:.4f} ({improvement*100:.2f} percentage points)")
+    print(f"Improvement: +{improvement:.4f} ({improvement*100:.2f} percentage points)")
 else:
-    print(f"📊 Performance change: {improvement:.4f}")
+    print(f"Performance change: {improvement:.4f}")
 
-print(f"\n✅ TARGET ANALYSIS:")
+print(f"\nTARGET ANALYSIS:")
 if best_accuracy >= 0.58:
-    print(f"🎉 SUCCESS: Reached 58-62% target range!")
-    print(f"🏆 Your model is now performing at {best_accuracy:.1%} - excellent!")
+    print(f"SUCCESS: Reached 58-62% target range!")
+    print(f"Your model is now performing at {best_accuracy:.1%} - excellent!")
 else:
-    print(f"📊 Progress: {best_accuracy:.1%} (Target: 58-62%)")
+    print(f"Progress: {best_accuracy:.1%} (Target: 58-62%)")
     gap = 0.58 - best_accuracy
-    print(f"🎯 Gap to target: {gap:.3f} ({gap*100:.1f} percentage points)")
+    print(f"Gap to target: {gap:.3f} ({gap*100:.1f} percentage points)")
 
 print("\n🔧 These improvements should significantly boost your performance!")
 print("Expected total gain: +2-4 percentage points 🚀")
