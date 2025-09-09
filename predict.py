@@ -244,6 +244,19 @@ dates_clean = matches_roll.loc[valid_idx, "date"]
 
 print(f"Dataset shape after cleaning: {X_clean.shape}")
 
+# Calculate class weights (FIX FOR THE ERROR)
+unique_classes = np.unique(y_clean)
+class_weights = compute_class_weight('balanced', classes=unique_classes, y=y_clean)
+
+# Create class weight dictionary for sklearn
+class_weight_sklearn = dict(zip(unique_classes, class_weights))
+
+# Create class weight dictionary for TensorFlow/Keras (FIX)
+class_weight_dict = {i: class_weights[i] for i in range(len(unique_classes))}
+
+print(f"Class distribution: {np.bincount(y_clean)}")
+print(f"Class weights: {class_weight_dict}")
+
 # Scale features
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X_clean)
@@ -317,75 +330,6 @@ xgb_pred = xgb_model_with_early_stop.predict(X_test)
 xgb_accuracy = accuracy_score(y_test, xgb_pred)
 print(f"XGBoost Accuracy: {xgb_accuracy:.4f}")
 
-class StackingEnsemble:
-    def __init__(self, base_models, meta_model):
-        self.base_models = base_models
-        self.meta_model = meta_model
-        self.fitted_base_models = {}
-        
-    def fit(self, X, y):
-        # Train base models
-        print("Training base models for stacking...")
-        for name, model in self.base_models.items():
-            print(f"  - Training {name}")
-            model.fit(X, y)
-            self.fitted_base_models[name] = model
-        
-        # Generate meta-features using cross-validation
-        tscv = TimeSeriesSplit(n_splits=3)
-        meta_features = np.zeros((X.shape[0], len(self.base_models) * 3))
-        
-        for fold, (train_idx, val_idx) in enumerate(tscv.split(X)):
-            X_fold_train, X_fold_val = X[train_idx], X[val_idx]
-            y_fold_train = y[train_idx]
-            
-            for i, (name, model) in enumerate(self.base_models.items()):
-                if name == 'XGB':
-                    # Create XGBoost without early stopping for cross-validation
-                    fold_model = xgb.XGBClassifier(
-                        n_estimators=400,
-                        max_depth=8,
-                        learning_rate=0.025,
-                        subsample=0.85,
-                        colsample_bytree=0.8,
-                        colsample_bylevel=0.8,
-                        colsample_bynode=0.7,
-                        reg_alpha=0.01,
-                        reg_lambda=2.0,
-                        min_child_weight=3,
-                        gamma=0.1,
-                        random_state=42,
-                        eval_metric='mlogloss',
-                        verbosity=0
-                    )
-                elif name == 'RF':
-                    fold_model = RandomForestClassifier(**model.get_params())
-                else:
-                    fold_model = GradientBoostingClassifier(**model.get_params())
-                
-                fold_model.fit(X_fold_train, y_fold_train)
-                probs = fold_model.predict_proba(X_fold_val)
-                meta_features[val_idx, i*3:(i+1)*3] = probs
-        
-        # Train meta-model
-        print("  - Training meta-learner")
-        self.meta_model.fit(meta_features, y)
-        
-    def predict_proba(self, X):
-        base_predictions = []
-        for name, model in self.fitted_base_models.items():
-            probs = model.predict_proba(X)
-            base_predictions.append(probs)
-        
-        meta_features = np.column_stack(base_predictions)
-        return self.meta_model.predict_proba(meta_features)
-    
-    def predict(self, X):
-        probs = self.predict_proba(X)
-        return np.argmax(probs, axis=1)
-    
-print("\nTraining Enhanced Stacking Ensemble...")
-
 class EnhancedStackingEnsemble:
     def __init__(self):
         # More diverse base models with different strengths
@@ -451,31 +395,13 @@ class EnhancedStackingEnsemble:
         return self.meta_model.predict(meta_features)
 
 # Train enhanced stacking
+print("\nTraining Enhanced Stacking Ensemble...")
 enhanced_stacking = EnhancedStackingEnsemble()
 enhanced_stacking.fit(X_train, y_train)
 
 enhanced_stacking_pred = enhanced_stacking.predict(X_test)
 enhanced_stacking_accuracy = accuracy_score(y_test, enhanced_stacking_pred)
 print(f"Enhanced Stacking Ensemble Accuracy: {enhanced_stacking_accuracy:.4f}")
-
-# Create base models for stacking (without early stopping)
-base_models = {
-    'RF': RandomForestClassifier(n_estimators=200, max_depth=15, random_state=42, class_weight='balanced'),
-    'GB': GradientBoostingClassifier(n_estimators=150, max_depth=6, random_state=42),
-    'XGB': xgb_model  # This one doesn't have early stopping
-}
-
-# Meta-learner
-meta_model = LogisticRegression(class_weight='balanced', random_state=42, max_iter=1000)
-
-# Create and train stacking ensemble
-print("\nTraining Stacking Ensemble...")
-stacking_ensemble = StackingEnsemble(base_models, meta_model)
-stacking_ensemble.fit(X_train, y_train)
-
-stacking_pred = stacking_ensemble.predict(X_test)
-stacking_accuracy = accuracy_score(y_test, stacking_pred)
-print(f"Stacking Ensemble Accuracy: {stacking_accuracy:.4f}")
 
 print("\nApplying Probability Calibration...")
 
@@ -528,10 +454,6 @@ for name, model in models_to_calibrate.items():
     
     print(f"  {name}: Accuracy {accuracy:.4f}, Log Loss {logloss:.4f}")
 
-# -----------------------------------------------------------------------------------
-# ADVANCED IMPROVEMENT 6: Enhanced TensorFlow Neural Networks
-# -----------------------------------------------------------------------------------
-
 print("\nTraining Advanced Neural Networks...")
 
 # Set seeds
@@ -569,7 +491,7 @@ effective_tf_model.fit(
     epochs=80,  # Fewer epochs
     batch_size=32,  # Smaller batch size
     validation_split=0.15,
-    class_weight=class_weight_dict,
+    class_weight=class_weight_dict,  # Now properly defined
     callbacks=[tf.keras.callbacks.EarlyStopping(patience=12, restore_best_weights=True)],
     verbose=0
 )
@@ -578,11 +500,79 @@ effective_tf_pred = effective_tf_model.predict(X_test, verbose=0).argmax(axis=1)
 effective_tf_accuracy = accuracy_score(y_test, effective_tf_pred)
 print(f"Effective TensorFlow NN Accuracy: {effective_tf_accuracy:.4f}")
 
-# -----------------------------------------------------------------------------------
-# ADVANCED IMPROVEMENT 7: PyTorch Neural Network with Advanced Architecture
-# -----------------------------------------------------------------------------------
+# Advanced TensorFlow model with more complexity
+def create_advanced_tf_model(input_dim):
+    """More complex architecture for better performance"""
+    inputs = tf.keras.layers.Input(shape=(input_dim,))
+    
+    # Feature attention
+    attention_weights = tf.keras.layers.Dense(input_dim, activation='sigmoid')(inputs)
+    attended_features = tf.keras.layers.Multiply()([inputs, attention_weights])
+    
+    # Main branch
+    x1 = tf.keras.layers.Dense(512, activation='relu')(attended_features)
+    x1 = tf.keras.layers.BatchNormalization()(x1)
+    x1 = tf.keras.layers.Dropout(0.4)(x1)
+    
+    x1 = tf.keras.layers.Dense(256, activation='relu')(x1)
+    x1 = tf.keras.layers.BatchNormalization()(x1)
+    x1 = tf.keras.layers.Dropout(0.3)(x1)
+    
+    # Residual connection
+    x2 = tf.keras.layers.Dense(256, activation='relu')(attended_features)
+    x1 = tf.keras.layers.Add()([x1, x2])
+    
+    x1 = tf.keras.layers.Dense(128, activation='relu')(x1)
+    x1 = tf.keras.layers.BatchNormalization()(x1)
+    x1 = tf.keras.layers.Dropout(0.2)(x1)
+    
+    x1 = tf.keras.layers.Dense(64, activation='relu')(x1)
+    x1 = tf.keras.layers.Dropout(0.1)(x1)
+    
+    outputs = tf.keras.layers.Dense(3, activation='softmax')(x1)
+    
+    model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
+    
+    initial_learning_rate = 0.001
+    lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+        initial_learning_rate,
+        decay_steps=100,
+        decay_rate=0.96,
+        staircase=True
+    )
 
-print("Training Advanced PyTorch NN...")
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=lr_schedule),
+        loss='sparse_categorical_crossentropy',
+        metrics=['accuracy']
+    )
+    
+    return model
+
+print("Training Advanced TensorFlow NN...")
+tf_model = create_advanced_tf_model(X_train.shape[1])
+
+# Add learning rate scheduling and early stopping
+lr_scheduler = tf.keras.callbacks.ReduceLROnPlateau(
+    monitor='val_loss', factor=0.5, patience=8, min_lr=1e-6
+)
+early_stop = tf.keras.callbacks.EarlyStopping(
+    monitor='val_loss', patience=15, restore_best_weights=True
+)
+
+tf_model.fit(
+    X_train, y_train,
+    epochs=120,
+    batch_size=64,
+    validation_split=0.2,
+    class_weight=class_weight_dict,
+    callbacks=[lr_scheduler, early_stop],
+    verbose=0
+)
+
+tf_pred = tf_model.predict(X_test, verbose=0).argmax(axis=1)
+tf_accuracy = accuracy_score(y_test, tf_pred)
+print(f"Advanced TensorFlow NN Accuracy: {tf_accuracy:.4f}")
 
 # Advanced PyTorch model with residual connections and attention
 class AdvancedFootballNet(nn.Module):
@@ -591,10 +581,10 @@ class AdvancedFootballNet(nn.Module):
         
         # Feature selection layer (learnable feature importance)
         self.feature_attention = nn.Linear(input_dim, input_dim)
-        self.input_norm = nn.LayerNorm(input_dim)  # LayerNorm instead of BatchNorm
+        self.input_norm = nn.LayerNorm(input_dim)
         
         # Main pathway with skip connections
-        self.fc1 = nn.Linear(input_dim, 640)  # Slightly larger
+        self.fc1 = nn.Linear(input_dim, 640)
         self.ln1 = nn.LayerNorm(640)
         self.dropout1 = nn.Dropout(0.35)
         
@@ -632,7 +622,7 @@ class AdvancedFootballNet(nn.Module):
         x_norm = self.input_norm(x_attended)
         
         # Main pathway
-        out1 = F.gelu(self.ln1(self.fc1(x_norm)))  # GELU instead of ReLU
+        out1 = F.gelu(self.ln1(self.fc1(x_norm)))
         out1 = self.dropout1(out1)
         
         out2 = F.gelu(self.ln2(self.fc2(out1)))
@@ -664,6 +654,8 @@ class AdvancedFootballNet(nn.Module):
         out4 = self.dropout4(out4)
         
         return self.output(out4)
+
+print("Training Advanced PyTorch NN...")
 
 # Prepare PyTorch data
 X_train_tensor = torch.FloatTensor(X_train)
@@ -741,15 +733,15 @@ for epoch in range(150):
     if val_loss < best_val_loss:
         best_val_loss = val_loss
         patience_counter = 0
-        # Save best model
-        torch.save(pytorch_model.state_dict(), 'best_pytorch_model.pth')
+        # Save best model state
+        best_model_state = pytorch_model.state_dict().copy()
     else:
         patience_counter += 1
         if patience_counter >= patience:
             break
 
-# Load best model and evaluate
-pytorch_model.load_state_dict(torch.load('best_pytorch_model.pth'))
+# Load best model state
+pytorch_model.load_state_dict(best_model_state)
 pytorch_model.eval()
 
 # Prediction
@@ -764,11 +756,6 @@ with torch.no_grad():
 pytorch_accuracy = accuracy_score(y_test, pytorch_predictions)
 print(f"Advanced PyTorch NN Accuracy: {pytorch_accuracy:.4f}")
 
-# Clean up temporary file
-import os
-if os.path.exists('best_pytorch_model.pth'):
-    os.remove('best_pytorch_model.pth')
-
 # -----------------------------------------------------------------------------------
 # FINAL RESULTS AND COMPARISON
 # -----------------------------------------------------------------------------------
@@ -781,7 +768,6 @@ print("="*60)
 all_results = [
     ('Optimized XGBoost', xgb_accuracy),
     ('Enhanced Stacking Ensemble', enhanced_stacking_accuracy),
-    ('Original Stacking Ensemble', stacking_accuracy),
     ('Effective TensorFlow NN', effective_tf_accuracy),
     ('Advanced TensorFlow NN', tf_accuracy),
     ('Advanced PyTorch NN', pytorch_accuracy)
@@ -803,23 +789,94 @@ print(f"\nBest Model: {best_model_name}")
 print(f"Best Accuracy: {best_accuracy:.4f} ({best_accuracy:.2%})")
 
 # Expected improvement analysis
+baseline_accuracy = 0.5677  # Previous best mentioned in comments
 print(f"\nENHANCEMENT ANALYSIS:")
-print(f"Previous Best: 0.5677 (56.77%)")
+print(f"Baseline: {baseline_accuracy:.4f} ({baseline_accuracy:.2%})")
 print(f"Enhanced Best: {best_accuracy:.4f} ({best_accuracy:.2%})")
-improvement = best_accuracy - 0.5677
+improvement = best_accuracy - baseline_accuracy
 if improvement > 0:
     print(f"Improvement: +{improvement:.4f} ({improvement*100:.2f} percentage points)")
 else:
     print(f"Performance change: {improvement:.4f}")
 
 print(f"\nTARGET ANALYSIS:")
-if best_accuracy >= 0.58:
-    print(f"SUCCESS: Reached 58-62% target range!")
-    print(f"Your model is now performing at {best_accuracy:.1%} - excellent!")
+target_min = 0.58
+target_max = 0.62
+if best_accuracy >= target_min:
+    if best_accuracy <= target_max:
+        print(f"SUCCESS: Within optimal target range ({target_min:.0%}-{target_max:.0%})!")
+    else:
+        print(f"SUCCESS: Exceeded target range - excellent performance!")
+    print(f"Your model is now performing at {best_accuracy:.1%}")
 else:
-    print(f"Progress: {best_accuracy:.1%} (Target: 58-62%)")
-    gap = 0.58 - best_accuracy
+    print(f"Progress: {best_accuracy:.1%} (Target: {target_min:.0%}-{target_max:.0%})")
+    gap = target_min - best_accuracy
     print(f"Gap to target: {gap:.3f} ({gap*100:.1f} percentage points)")
 
-print("\n🔧 These improvements should significantly boost your performance!")
-print("Expected total gain: +2-4 percentage points 🚀")
+# Detailed classification report for best model
+print(f"\n" + "="*60)
+print(f"DETAILED ANALYSIS - {best_model_name}")
+print("="*60)
+
+# Get predictions from best model
+if 'XGBoost' in best_model_name:
+    if 'Calibrated' in best_model_name:
+        best_predictions = calibrated_models[best_model_name].predict(X_test)
+    else:
+        best_predictions = xgb_model_with_early_stop.predict(X_test)
+elif 'Enhanced Stacking' in best_model_name:
+    best_predictions = enhanced_stacking_pred
+elif 'Effective TensorFlow' in best_model_name:
+    best_predictions = effective_tf_pred
+elif 'Advanced TensorFlow' in best_model_name:
+    best_predictions = tf_pred
+elif 'PyTorch' in best_model_name:
+    best_predictions = pytorch_predictions
+else:
+    # Default to first calibrated model
+    best_predictions = list(calibrated_results.keys())[0]
+    best_predictions = calibrated_models[list(calibrated_results.keys())[0]].predict(X_test)
+
+# Classification report
+target_names = ['Loss (0 pts)', 'Draw (1 pt)', 'Win (3 pts)']
+print("\nClassification Report:")
+print(classification_report(y_test, best_predictions, target_names=target_names))
+
+# Confusion Matrix
+print("\nConfusion Matrix:")
+cm = confusion_matrix(y_test, best_predictions)
+print("Predicted:  Loss  Draw  Win")
+for i, row in enumerate(cm):
+    actual_label = target_names[i][:4]  # Truncate for alignment
+    print(f"Actual {actual_label}: {row[0]:4d}  {row[1]:4d} {row[2]:4d}")
+
+# Performance by class
+class_accuracies = []
+for i in range(3):
+    class_mask = (y_test == i)
+    if np.sum(class_mask) > 0:
+        class_acc = accuracy_score(y_test[class_mask], best_predictions[class_mask])
+        class_accuracies.append((target_names[i], class_acc, np.sum(class_mask)))
+
+print("\nPer-class Performance:")
+for class_name, acc, count in class_accuracies:
+    print(f"{class_name:15s}: {acc:.4f} ({count:3d} samples)")
+
+print("\nOPTIMIZATION SUMMARY:")
+print("Fixed class_weight_dict definition")
+print("Enhanced feature engineering with 173 features")
+print("Advanced ensemble methods")
+print("Neural networks with attention mechanisms")
+print("Probability calibration")
+print("Comprehensive model comparison")
+
+if best_accuracy >= target_min:
+    print("\nTARGET ACHIEVED! Your model is ready for deployment!")
+else:
+    print(f"\nGood progress! Consider these next steps:")
+    print("- Fine-tune hyperparameters further")
+    print("- Add more domain-specific features")
+    print("- Collect more training data")
+    print("- Try ensemble of top 3 models")
+
+print(f"\nFinal Performance: {best_accuracy:.1%} accuracy")
